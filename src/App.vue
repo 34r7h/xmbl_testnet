@@ -50,25 +50,25 @@ const modules = ref([
     name: 'XID', 
     description: "XMBL's MAYO Signatures - Quantum-resistant identity system", 
     port: 3003,
-    tests: 0,
-    coverage: 0,
-    readiness: 0,
-    status: 'pending',
-    statusText: 'Pending',
-    nextSteps: ['Set up project structure', 'Port MAYO C to WASM', 'Implement key generation'],
-    lastUpdated: 'Not started'
+    tests: 35,
+    coverage: 98,
+    readiness: 99,
+    status: 'in-progress',
+    statusText: 'In Progress',
+    nextSteps: ['Achieve 100% coverage (currently 98% statements, 80% branches)', 'Test WASM wrapper error paths (lines 52, 87, 132)', 'Ready for Phase 2 integration'],
+    lastUpdated: '2025-11-22'
   },
   { 
     name: 'XN', 
     description: 'XMBL Networking - P2P networking layer', 
     port: 3000,
-    tests: 0,
-    coverage: 0,
-    readiness: 0,
-    status: 'pending',
-    statusText: 'Pending',
-    nextSteps: ['Set up libp2p', 'Implement peer discovery', 'Add message routing'],
-    lastUpdated: 'Not started'
+    tests: 45,
+    coverage: 97,
+    readiness: 98,
+    status: 'in-progress',
+    statusText: 'In Progress',
+    nextSteps: ['Achieve 100% coverage (currently 97% statements, 91% branches)', 'Test remaining error paths (discovery, gossip, pubsub, node)', 'Ready for Phase 2 integration'],
+    lastUpdated: '2025-11-22'
   },
   { 
     name: 'XCLT', 
@@ -182,16 +182,42 @@ const modules = ref([
 
 // Load progress from localStorage or API
 function loadProgress() {
+  // Check if we should use defaults (first load or forced refresh)
+  const useDefaults = !localStorage.getItem('xmbl-module-progress') || 
+                      localStorage.getItem('xmbl-force-refresh') === 'true'
+  
+  if (useDefaults) {
+    // Clear force refresh flag
+    localStorage.removeItem('xmbl-force-refresh')
+    return // Use hardcoded defaults
+  }
+  
   const saved = localStorage.getItem('xmbl-module-progress')
   if (saved) {
     try {
       const savedModules = JSON.parse(saved)
+      // Merge saved data with defaults, preferring higher values
       modules.value = modules.value.map(module => {
         const saved = savedModules.find(m => m.name === module.name)
-        return saved ? { ...module, ...saved } : module
+        if (saved) {
+          // Merge: use saved value if it's higher/better, otherwise use default
+          // Always use current nextSteps from defaults (they're more up-to-date)
+          return {
+            ...module,
+            tests: Math.max(module.tests || 0, saved.tests || 0),
+            coverage: Math.max(module.coverage || 0, saved.coverage || 0),
+            readiness: Math.max(module.readiness || 0, saved.readiness || 0),
+            // Always use current nextSteps from defaults
+            nextSteps: module.nextSteps,
+            lastUpdated: module.lastUpdated
+          }
+        }
+        return module
       })
     } catch (e) {
       console.error('Failed to load progress:', e)
+      // On error, clear localStorage and use defaults
+      localStorage.removeItem('xmbl-module-progress')
     }
   }
 }
@@ -220,11 +246,25 @@ function saveProgress() {
 
 onMounted(() => {
   loadProgress()
+  // Update status based on current metrics
   modules.value.forEach(updateModuleStatus)
+  // Force save current state to update localStorage with latest defaults (including nextSteps)
+  saveProgress()
+  
+  // Log current state for debugging
+  console.log('XMBL Module Progress:', modules.value.map(m => ({
+    name: m.name,
+    tests: m.tests,
+    coverage: m.coverage,
+    readiness: m.readiness,
+    status: m.status,
+    nextSteps: m.nextSteps
+  })))
   
   // Simulate progress updates (replace with actual test runner integration)
   setInterval(() => {
     // In real implementation, this would fetch from test runner
+    modules.value.forEach(updateModuleStatus)
     saveProgress()
   }, 5000)
 })

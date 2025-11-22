@@ -1,8 +1,4 @@
-const port = process.env.PORT || 3003
-
-console.log(`XID (XMBL's Mayo Signatures) starting on port ${port}`)
-
-// Module implementation here
-
-
-
+export { MAYOWasm } from './src/wasm-wrapper.js';
+export { Identity } from './src/identity.js';
+export { KeyManager } from './src/key-manager.js';
+export { batchSign, batchVerify } from './src/batch.js';
