@@ -3,10 +3,15 @@ import { StateDiff } from './state-diff.js';
 import { WASMExecutor } from './wasm-execution.js';
 import { StateShard } from './sharding.js';
 import { StateAssembler } from './state-assembly.js';
+import { Level } from 'level';
 
 export class StateMachine {
   constructor(options = {}) {
-    this.stateTree = new VerkleStateTree();
+    const dbPath = options.dbPath || './data/xvsm';
+    this.db = new Level(dbPath);
+    this._dbOpen = false;
+    
+    this.stateTree = new VerkleStateTree({ db: this.db });
     this.executor = new WASMExecutor();
     this.assembler = new StateAssembler();
     this.shards = [];
@@ -22,15 +27,81 @@ export class StateMachine {
     // Integration: xclt for state commitments from ledger
     this.xclt = options.xclt || null;
     
+    // Initialize database
+    this._initDb().catch(() => {});
+    
     // Listen to ledger events if available
     if (this.xclt) {
-      this.xclt.on('block:added', (block) => {
-        this._handleLedgerBlock(block);
+      this.xclt.on('block:added', async (block) => {
+        await this._handleLedgerBlock(block);
       });
       
       this.xclt.on('cube:complete', (cube) => {
         this._handleCubeComplete(cube);
       });
+    }
+  }
+  
+  async _initDb() {
+    try {
+      await this.db.open();
+      this._dbOpen = true;
+      await this._loadDiffs();
+      await this._loadTransactionLog();
+    } catch (error) {
+      this._dbOpen = false;
+    }
+  }
+  
+  async _loadDiffs() {
+    if (!this._dbOpen) return;
+    
+    try {
+      for await (const [key, value] of this.db.iterator({ gt: 'diff:', lt: 'diff:\xFF' })) {
+        const diffData = JSON.parse(value.toString());
+        const diff = new StateDiff(diffData.txId, diffData.changes);
+        diff.timestamp = diffData.timestamp;
+        this.diffs.push(diff);
+      }
+    } catch (error) {
+      // Ignore load errors
+    }
+  }
+  
+  async _loadTransactionLog() {
+    if (!this._dbOpen) return;
+    
+    try {
+      const logData = await this.db.get('transactionLog').catch(() => null);
+      if (logData) {
+        this.transactionLog = JSON.parse(logData.toString());
+      }
+    } catch (error) {
+      // Ignore load errors
+    }
+  }
+  
+  async _saveDiff(diff) {
+    if (!this._dbOpen) return;
+    
+    try {
+      await this.db.put(`diff:${diff.txId}`, JSON.stringify({
+        txId: diff.txId,
+        changes: diff.changes,
+        timestamp: diff.timestamp
+      }));
+    } catch (error) {
+      // Ignore save errors
+    }
+  }
+  
+  async _saveTransactionLog() {
+    if (!this._dbOpen) return;
+    
+    try {
+      await this.db.put('transactionLog', JSON.stringify(this.transactionLog));
+    } catch (error) {
+      // Ignore save errors
     }
   }
   
@@ -43,7 +114,7 @@ export class StateMachine {
         
         // Update state tree
         for (const [key, value] of Object.entries(block.tx.args)) {
-          this.stateTree.insert(key, value);
+          await this.stateTree.insert(key, value);
         }
       } catch (error) {
         console.warn('Failed to process ledger block state diff:', error.message);
@@ -86,11 +157,12 @@ export class StateMachine {
       
       // Store diff
       this.diffs.push(diff);
+      await this._saveDiff(diff);
       
       // Update Verkle tree
       for (const [key, value] of Object.entries(changes)) {
         const fullKey = shardKey ? `${shardKey}:${key}` : key;
-        this.stateTree.insert(fullKey, value);
+        await this.stateTree.insert(fullKey, value);
         console.log(`State updated: ${fullKey} = ${JSON.stringify(value)}`);
       }
       
@@ -102,6 +174,7 @@ export class StateMachine {
         duration,
         changes: Object.keys(changes).length
       });
+      await this._saveTransactionLog();
       
       return {
         txId,

@@ -1,0 +1,40 @@
+name: Security Audit
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Weekly
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run npm audit
+      run: npm audit --audit-level=moderate
+      continue-on-error: true
+    
+    - name: Check for known vulnerabilities
+      run: |
+        npm audit --json > audit.json || true
+        if [ -f audit.json ]; then
+          VULNS=$(cat audit.json | jq '.metadata.vulnerabilities.total // 0')
+          if [ "$VULNS" -gt 0 ]; then
+            echo "Found $VULNS vulnerabilities"
+            exit 1
+          fi
+        fi
+

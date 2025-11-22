@@ -6,7 +6,8 @@ import { createHash } from 'crypto';
 export class ConsensusWorkflow extends EventEmitter {
   constructor(options = {}) {
     super();
-    this.mempool = new Mempool();
+    const dbPath = options.dbPath || './data/xpc';
+    this.mempool = new Mempool({ dbPath: `${dbPath}/mempool` });
     this.taskManager = new ValidationTaskManager();
     this.requiredValidations = 3; // Configurable
     this.rawTxToId = new Map(); // Map rawTxId to leaderId for lookup
@@ -35,10 +36,10 @@ export class ConsensusWorkflow extends EventEmitter {
   async submitTransaction(leaderId, txData) {
     // Lock UTXOs
     const utxos = this._extractUtxos(txData);
-    this.mempool.lockUtxos(utxos);
+    await this.mempool.lockUtxos(utxos);
     
     // Add to raw_tx_mempool
-    const rawTxId = this.mempool.addRawTransaction(leaderId, txData);
+    const rawTxId = await this.mempool.addRawTransaction(leaderId, txData);
     this.rawTxToId.set(rawTxId, leaderId);
     
     // Emit event
@@ -100,7 +101,7 @@ export class ConsensusWorkflow extends EventEmitter {
     this.taskManager.completeTask(task.leaderId, taskId);
     
     // Add validation timestamp
-    this._addValidationTimestamp(rawTxId, timestamp);
+    await this._addValidationTimestamp(rawTxId, timestamp);
     
     // Check if enough validations
     const validations = this._getValidationCount(rawTxId);
@@ -121,15 +122,17 @@ export class ConsensusWorkflow extends EventEmitter {
     const txId = this._hashTransaction({ timestamp: avgTimestamp, ...rawTx.txData });
     
     const leaderId = this.rawTxToId.get(rawTxId);
-    this.mempool.processingTx.set(txId, {
+    const processingTxData = {
       timestamp: avgTimestamp,
       txData: rawTx.txData,
       sig: rawTx.txData.sig || null, // Leader signs
       leader: leaderId
-    });
+    };
+    this.mempool.processingTx.set(txId, processingTxData);
+    await this.mempool._saveProcessingTx(txId, processingTxData);
     
     // Remove from raw_tx_mempool
-    this._removeRawTransaction(rawTxId);
+    await this._removeRawTransaction(rawTxId);
     
     this.emit('tx:processing', { txId, rawTxId });
   }
@@ -148,19 +151,27 @@ export class ConsensusWorkflow extends EventEmitter {
     return this.mempool.processingTx.get(txId) || null;
   }
 
-  finalizeTransaction(txId) {
+  async finalizeTransaction(txId) {
     const processingTx = this.mempool.processingTx.get(txId);
     if (!processingTx) return false;
     
     // Move to final tx_mempool
     this.mempool.tx.set(txId, processingTx.txData);
+    await this.mempool._saveTx(txId, processingTx.txData);
     
     // Remove from processing
     this.mempool.processingTx.delete(txId);
+    if (this.mempool._dbOpen) {
+      try {
+        await this.mempool.db.del(`processingTx:${txId}`);
+      } catch (error) {
+        // Ignore delete errors
+      }
+    }
     
     // Unlock UTXOs
     const utxos = this._extractUtxos(processingTx.txData);
-    this.mempool.unlockUtxos(utxos);
+    await this.mempool.unlockUtxos(utxos);
     
     this.emit('tx:finalized', { txId, txData: processingTx.txData });
     return true;
@@ -199,7 +210,7 @@ export class ConsensusWorkflow extends EventEmitter {
     return null;
   }
 
-  _addValidationTimestamp(rawTxId, timestamp) {
+  async _addValidationTimestamp(rawTxId, timestamp) {
     const leaderId = this.rawTxToId.get(rawTxId);
     if (!leaderId) return;
     
@@ -209,6 +220,7 @@ export class ConsensusWorkflow extends EventEmitter {
     const rawTx = leaderMempool.get(rawTxId);
     if (rawTx) {
       rawTx.validationTimestamps.push(timestamp);
+      await this.mempool._saveRawTx(leaderId, rawTxId, rawTx);
     }
   }
 
@@ -233,13 +245,14 @@ export class ConsensusWorkflow extends EventEmitter {
     return leaderMempool.get(rawTxId) || null;
   }
 
-  _removeRawTransaction(rawTxId) {
+  async _removeRawTransaction(rawTxId) {
     const leaderId = this.rawTxToId.get(rawTxId);
     if (!leaderId) return;
     
     const leaderMempool = this.mempool.rawTx.get(leaderId);
     if (leaderMempool) {
       leaderMempool.delete(rawTxId);
+      await this.mempool._deleteRawTx(leaderId, rawTxId);
     }
     this.rawTxToId.delete(rawTxId);
   }

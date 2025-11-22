@@ -1,13 +1,23 @@
 import { EventEmitter } from 'events';
+import WebTorrent from 'webtorrent';
 
+/**
+ * Consensus Gossip with WebTorrent integration
+ * Broadcasts consensus messages via WebTorrent swarms
+ */
 export class ConsensusGossip extends EventEmitter {
   constructor(options = {}) {
     super();
     this.broadcasts = []; // Store broadcasts for testing
+    this.client = new WebTorrent();
+    this.swarms = new Map(); // topic -> swarm
     
-    // Integration: xn for network gossip
+    // Integration: xn for network gossip (fallback)
     this.xn = options.xn || null;
     this.topic = options.topic || 'consensus:raw_tx';
+    
+    // Initialize WebTorrent swarm
+    this._initSwarm().catch(() => {});
     
     // Subscribe to topic if network available and started
     if (this.xn && this.xn.started) {
@@ -18,6 +28,35 @@ export class ConsensusGossip extends EventEmitter {
     }
   }
 
+  /**
+   * Initialize WebTorrent swarm
+   * @private
+   */
+  async _initSwarm() {
+    try {
+      const swarm = this.client.swarm(this.topic);
+      this.swarms.set(this.topic, swarm);
+
+      swarm.on('wire', (wire) => {
+        wire.on('message', (message) => {
+          try {
+            const data = JSON.parse(message.toString());
+            this._handleMessage(data);
+          } catch (error) {
+            // Ignore invalid messages
+          }
+        });
+      });
+    } catch (error) {
+      // WebTorrent may not be available in all environments
+    }
+  }
+
+  /**
+   * Broadcast raw transaction via WebTorrent and libp2p
+   * @param {string} leaderId - Leader ID
+   * @param {Object} tx - Transaction data
+   */
   async broadcastRawTransaction(leaderId, tx) {
     const message = {
       type: 'raw_tx',
@@ -29,7 +68,18 @@ export class ConsensusGossip extends EventEmitter {
     this.broadcasts.push(message);
     this.emit('raw_tx:broadcast', message);
     
-    // Integration: Broadcast via network if xn available
+    // Broadcast via WebTorrent if available
+    const swarm = this.swarms.get(this.topic);
+    if (swarm) {
+      try {
+        const messageBuffer = Buffer.from(JSON.stringify(message));
+        swarm.broadcast(messageBuffer);
+      } catch (error) {
+        // Ignore WebTorrent errors
+      }
+    }
+    
+    // Integration: Broadcast via network if xn available (fallback)
     if (this.xn) {
       try {
         await this.xn.publish(this.topic, message);
@@ -39,6 +89,10 @@ export class ConsensusGossip extends EventEmitter {
     }
   }
 
+  /**
+   * Handle incoming gossip messages
+   * @private
+   */
   _handleMessage(message) {
     // Handle incoming gossip messages
     if (message.type === 'raw_tx') {
@@ -47,6 +101,21 @@ export class ConsensusGossip extends EventEmitter {
         tx: message.tx
       });
     }
+  }
+
+  /**
+   * Cleanup and destroy swarms
+   */
+  async destroy() {
+    for (const swarm of this.swarms.values()) {
+      try {
+        swarm.destroy();
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+    }
+    this.swarms.clear();
+    this.client.destroy();
   }
 }
 

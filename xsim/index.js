@@ -1,8 +1,10 @@
-const port = process.env.PORT || 3006
+import { SystemSimulator } from './src/simulator.js';
 
-console.log(`XSIM (XMBL Simulator) starting on port ${port}`)
+const port = process.env.PORT || 3006;
 
-// Module implementation here
+console.log(`XSIM (XMBL Simulator) starting on port ${port}`);
+
+export { SystemSimulator };
 
 
 

@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  xmbl-node:
+    build: .
+    container_name: xmbl-node
+    ports:
+      - "3000:3000"  # xn
+      - "3001:3001"  # xclt
+      - "3002:3002"  # xvsm
+      - "3003:3003"  # xid
+      - "3004:3004"  # xpc
+      - "3005:3005"  # xsc
+      - "3006:3006"  # xsim
+      - "3007:3007"  # xcli
+      - "3008:3008"  # xv
+    volumes:
+      - ./data:/app/data
+      - ./xcli/keys:/app/xcli/keys
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    restart: unless-stopped
+

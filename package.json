@@ -2,13 +2,31 @@
   "name": "xmbl-testnet",
   "version": "0.1.0",
   "type": "module",
+  "workspaces": [
+    "xcli",
+    "xclt",
+    "xid",
+    "xn",
+    "xpc",
+    "xsc",
+    "xsim",
+    "xv",
+    "xvsm",
+    "xbe",
+    "xda"
+  ],
   "scripts": {
     "dev": "node scripts/run-modules.js",
     "build": "vite build",
     "preview": "vite preview",
-    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "lint": "eslint . --ext .js",
+    "format": "prettier --write \"**/*.{js,json,md}\"",
+    "audit": "npm audit",
+    "audit:fix": "npm audit fix"
   },
   "dependencies": {
+    "pino": "^10.1.0",
     "vue": "^3.4.0"
   },
   "devDependencies": {
@@ -16,6 +34,9 @@
     "vite": "^5.0.0",
     "concurrently": "^8.2.2",
     "jest": "^29.7.0",
-    "@jest/globals": "^29.7.0"
+    "@jest/globals": "^29.7.0",
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5",
+    "pino-pretty": "^11.0.0"
   }
 }

@@ -1,0 +1,29 @@
+{
+  "network": {
+    "port": 3000,
+    "bootstrap": []
+  },
+  "ledger": {
+    "dbPath": "./data/ledger"
+  },
+  "stateMachine": {
+    "dbPath": "./data/xvsm",
+    "totalShards": 4
+  },
+  "consensus": {
+    "dbPath": "./data/xpc",
+    "requiredValidations": 3
+  },
+  "storage": {
+    "dbPath": "./data/storage",
+    "capacity": 1000000
+  },
+  "logging": {
+    "level": "info"
+  },
+  "rateLimit": {
+    "maxRequests": 100,
+    "windowMs": 60000
+  }
+}
+

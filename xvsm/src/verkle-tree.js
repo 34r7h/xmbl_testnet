@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { Level } from 'level';
 
 class VerkleNode {
   constructor() {
@@ -9,13 +10,66 @@ class VerkleNode {
 }
 
 export class VerkleStateTree {
-  constructor() {
+  constructor(options = {}) {
     this.root = new VerkleNode();
     this.state = new Map(); // key -> value
+    this.db = options.db || null;
+    this._dbOpen = false;
+    
+    if (this.db) {
+      this._initDb().catch(() => {});
+    }
+  }
+  
+  async _initDb() {
+    try {
+      if (this.db && typeof this.db.open === 'function') {
+        await this.db.open();
+      }
+      this._dbOpen = true;
+      await this._loadState();
+    } catch (error) {
+      this._dbOpen = false;
+    }
+  }
+  
+  async _loadState() {
+    if (!this.db || !this._dbOpen) return;
+    
+    try {
+      for await (const [key, value] of this.db.iterator({ gt: 'state:', lt: 'state:\xFF' })) {
+        const stateKey = key.toString().substring(6); // Remove 'state:' prefix
+        const stateValue = JSON.parse(value.toString());
+        this.state.set(stateKey, stateValue);
+      }
+    } catch (error) {
+      // Ignore errors during load
+    }
+  }
+  
+  async _saveState(key, value) {
+    if (!this.db || !this._dbOpen) return;
+    
+    try {
+      await this.db.put(`state:${key}`, JSON.stringify(value));
+    } catch (error) {
+      // Ignore save errors
+    }
+  }
+  
+  async _deleteState(key) {
+    if (!this.db || !this._dbOpen) return;
+    
+    try {
+      await this.db.del(`state:${key}`);
+    } catch (error) {
+      // Ignore delete errors
+    }
   }
 
-  insert(key, value) {
+  async insert(key, value) {
     this.state.set(key, value);
+    await this._saveState(key, value);
     const keyHash = this._hashKey(key);
     const valueHash = this._hashValue(value);
     const path = [];
@@ -28,8 +82,9 @@ export class VerkleStateTree {
     return this.state.get(key);
   }
 
-  delete(key) {
+  async delete(key) {
     this.state.delete(key);
+    await this._deleteState(key);
     const keyHash = this._hashKey(key);
     const path = [];
     this._deleteNode(this.root, keyHash, 0, path);

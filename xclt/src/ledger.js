@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import { Block } from './block.js';
 import { Face } from './face.js';
 import { Cube } from './cube.js';
+import { SuperCube } from './super-cube.js';
 import { getFaceIndex, getBlockPosition } from './placement.js';
 import { Level } from 'level';
 
@@ -17,6 +18,8 @@ export class Ledger extends EventEmitter {
     this.pendingFaces = new Map(); // faceIndex -> Face
     this.parallelCubes = new Map(); // faceIndex -> Cube[] (array of parallel cubes for same face index)
     this.nextCubeId = 0;
+    this.superCubes = new Map(); // level -> Map<cubeIndex, SuperCube>
+    this.completedLevel1Cubes = []; // Track completed Level 1 cubes for super-cube formation
     
     // Integration: xid for signature verification
     this.xid = options.xid || null;
@@ -47,6 +50,14 @@ export class Ledger extends EventEmitter {
     }
   }
 
+  /**
+   * Add a transaction to the ledger
+   * @param {Object} tx - Transaction object
+   * @returns {Promise<Object>} Block information
+   * @emits block:added
+   * @emits face:complete
+   * @emits cube:complete
+   */
   async addTransaction(tx) {
     // Integration: Verify signature if xid available and tx has signature
     if (this.xid && tx.sig && tx.publicKey) {
@@ -283,6 +294,98 @@ export class Ledger extends EventEmitter {
     // Emit cube complete event
     this.emit('cube:complete', cube);
     console.log(`Cube complete: ${cube.id} with ${cube.faces.size} faces`);
+    
+    // Check if we should form a super-cube (Level 2)
+    await this._checkSuperCubeFormation(cube);
+  }
+
+  /**
+   * Check if we should form a super-cube from completed Level 1 cubes
+   * When 27 Level 1 cubes are complete, form a Level 2 super-cube
+   * @private
+   */
+  async _checkSuperCubeFormation(completedCube) {
+    // Only process Level 1 cubes
+    if (completedCube.level && completedCube.level > 1) {
+      return;
+    }
+
+    this.completedLevel1Cubes.push(completedCube);
+
+    // When we have 27 completed cubes, form a super-cube
+    if (this.completedLevel1Cubes.length >= 27) {
+      await this._formSuperCube();
+    }
+  }
+
+  /**
+   * Form a Level 2 super-cube from 27 completed Level 1 cubes
+   * @private
+   */
+  async _formSuperCube() {
+    if (this.completedLevel1Cubes.length < 27) {
+      return;
+    }
+
+    // Take the first 27 cubes
+    const cubesForSuperCube = this.completedLevel1Cubes.splice(0, 27);
+    
+    // Initialize super-cubes map for level 2 if needed
+    if (!this.superCubes.has(2)) {
+      this.superCubes.set(2, new Map());
+    }
+
+    const level2Cubes = this.superCubes.get(2);
+    const superCubeIndex = level2Cubes.size;
+    const superCube = new SuperCube(2);
+
+    // Add cubes to super-cube
+    for (let i = 0; i < cubesForSuperCube.length; i++) {
+      superCube.addChildCube(i, cubesForSuperCube[i]);
+    }
+
+    level2Cubes.set(superCubeIndex, superCube);
+
+    // Emit event for super-cube completion
+    this.emit('supercube:complete', { level: 2, index: superCubeIndex, cube: superCube });
+
+    // Check if we should form Level 3 (mega-cube) from 27 Level 2 super-cubes
+    if (level2Cubes.size >= 27) {
+      await this._formMegaCube();
+    }
+  }
+
+  /**
+   * Form a Level 3 mega-cube from 27 completed Level 2 super-cubes
+   * @private
+   */
+  async _formMegaCube() {
+    const level2Cubes = this.superCubes.get(2);
+    if (!level2Cubes || level2Cubes.size < 27) {
+      return;
+    }
+
+    // Take the first 27 super-cubes
+    const superCubesForMega = Array.from(level2Cubes.values()).slice(0, 27);
+    
+    // Initialize mega-cubes map for level 3 if needed
+    if (!this.superCubes.has(3)) {
+      this.superCubes.set(3, new Map());
+    }
+
+    const level3Cubes = this.superCubes.get(3);
+    const megaCubeIndex = level3Cubes.size;
+    const megaCube = new SuperCube(3);
+
+    // Add super-cubes to mega-cube
+    for (let i = 0; i < superCubesForMega.length; i++) {
+      megaCube.addChildCube(i, superCubesForMega[i]);
+    }
+
+    level3Cubes.set(megaCubeIndex, megaCube);
+
+    // Emit event for mega-cube completion
+    this.emit('megacube:complete', { level: 3, index: megaCubeIndex, cube: megaCube });
   }
 
   async getBlock(blockId) {

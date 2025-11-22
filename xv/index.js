@@ -1,8 +1,19 @@
-const port = process.env.PORT || 3008
+import { XMBLVisualizer } from './src/visualizer.js';
 
-console.log(`XV (XMBL Visualizer) starting on port ${port}`)
+const port = process.env.PORT || 3008;
 
-// Module implementation here
+console.log(`XV (XMBL Visualizer) starting on port ${port}`);
+
+// Export visualizer
+export { XMBLVisualizer };
+
+// If running in browser, initialize
+if (typeof window !== 'undefined') {
+  window.addEventListener('DOMContentLoaded', () => {
+    const visualizer = new XMBLVisualizer();
+    window.xmblVisualizer = visualizer;
+  });
+}
 
 
 

@@ -309,6 +309,7 @@ core/
 ### ✅ COMPLETED PHASES
 
 #### Phase 1: Foundation ✅ COMPLETE (100%)
+
 - [x] **xid module**: ✅ COMPLETE
   - 35/35 tests passing
   - 98.33% statement coverage, 80% branch, 100% function
@@ -323,6 +324,7 @@ core/
   - All integrations complete (xn+xclt, xpc+xn, xsc+xn)
 
 #### Phase 2: Core Ledger ✅ COMPLETE (100%)
+
 - [x] **xclt module**: ✅ COMPLETE
   - 45/45 tests passing
   - Comprehensive coverage of all core functionality
@@ -331,6 +333,7 @@ core/
   - All integrations complete (xid+xclt, xn+xclt, xclt+xvsm, xpc+xclt, xsc+xclt)
 
 #### Phase 3: State & Consensus ✅ COMPLETE (100%)
+
 - [x] **xvsm module**: ✅ COMPLETE
   - 61/61 tests passing
   - Verkle tree, state diffs, WASM execution working
@@ -343,6 +346,7 @@ core/
   - All integrations complete (xpc+xid, xpc+xclt, xpc+xn, xsc+xpc)
 
 #### Phase 4: Storage & Compute ✅ COMPLETE (100%)
+
 - [x] **xsc module**: ✅ COMPLETE
   - 17/17 tests passing
   - Storage sharding, WASM compute, market pricing working
@@ -350,6 +354,7 @@ core/
   - All integrations complete (xsc+xn, xsc+xpc, xsc+xclt)
 
 #### Phase 5: Tools & Interfaces ⚠️ PARTIAL (20%)
+
 - [x] **xcli module**: ✅ COMPLETE
   - 6/6 tests passing
   - All 11 command categories implemented (50+ commands)
@@ -378,6 +383,7 @@ core/
   - No wallet functionality
 
 #### Integration Testing ✅ COMPLETE (100%)
+
 - [x] **Module-to-Module Integration**: ✅ COMPLETE
   - 48 integration tests covering all module pairs
   - All tests passing
@@ -390,6 +396,7 @@ core/
 - [x] **Total Integration Tests**: 60/60 passing (100%)
 
 #### Core Integration Layer ✅ COMPLETE
+
 - [x] **core/index.js**: ✅ COMPLETE
   - XMBLCore class implemented
   - All modules integrated
@@ -398,6 +405,7 @@ core/
 ### ❌ MISSING FOR PRODUCTION-GRADE SYSTEM
 
 #### Phase 1 Setup (Infrastructure) ❌ INCOMPLETE (0%)
+
 - [ ] **npm workspaces**: ❌ NOT CONFIGURED
   - Root package.json lacks workspaces field
   - Cannot manage dependencies across modules efficiently
@@ -416,6 +424,7 @@ core/
 #### Production-Grade Features ❌ MISSING
 
 **Logging & Monitoring:**
+
 - [ ] **Structured Logging**: ❌ NOT IMPLEMENTED
   - No logging framework (Winston, Pino, Bunyan)
   - Only console.log statements
@@ -432,6 +441,7 @@ core/
   - No readiness/liveness probes
 
 **Security:**
+
 - [ ] **Rate Limiting**: ❌ NOT IMPLEMENTED
   - No DoS protection
   - No request throttling
@@ -451,6 +461,7 @@ core/
   - No secure key derivation
 
 **Performance:**
+
 - [ ] **Caching**: ❌ NOT IMPLEMENTED
   - No caching layer for frequently accessed state
   - No Redis/Memcached integration
@@ -466,6 +477,7 @@ core/
   - No transaction size limits
 
 **Documentation:**
+
 - [ ] **JSDoc**: ⚠️ PARTIAL
   - Some JSDoc in xclt/geometry.js
   - No comprehensive API documentation
@@ -484,6 +496,7 @@ core/
   - No design decision records (ADRs)
 
 **Testing:**
+
 - [ ] **E2E Test Coverage**: ⚠️ BASIC
   - 3 E2E tests for transaction flow
   - No comprehensive E2E test suite
@@ -499,6 +512,7 @@ core/
   - No vulnerability scanning
 
 **Deployment & Operations:**
+
 - [ ] **Testnet Deployment**: ❌ NOT STARTED
   - No cloud VM deployment
   - No network topology configuration
@@ -518,6 +532,7 @@ core/
   - No data migration tools
 
 **Advanced Features:**
+
 - [ ] **Level 2+ Hierarchical Growth**: ❌ NOT IMPLEMENTED
   - Only Level 1 (atomic cubes) implemented
   - No super-cubes, mega-cubes
@@ -533,9 +548,8 @@ core/
   - Basic gossip infrastructure in xpc
   - Not fully integrated with WebTorrent protocol
 
-### To-dos
-
 #### ✅ COMPLETED
+
 - [x] Phase 1: Develop xid module (MAYO WASM port, key generation, signing/verification) - Foundation layer, no dependencies
 - [x] Phase 1: Develop xn module (libp2p setup, peer discovery, message routing) - Foundation layer, no dependencies
 - [x] Root AI: Validate Phase 1 checkpoints - xid and xn APIs stable, basic functionality working
@@ -552,6 +566,7 @@ core/
 #### ❌ REMAINING FOR PRODUCTION-GRADE SYSTEM
 
 **Phase 1 Setup (Critical Infrastructure):**
+
 - [ ] Configure npm workspaces in root package.json
 - [ ] Set up ESLint with Airbnb config
 - [ ] Set up Prettier for code formatting
@@ -560,12 +575,14 @@ core/
 - [ ] Configure Dependabot for dependency updates
 
 **Phase 5 Tools (Remaining):**
+
 - [ ] Develop xv module (3D visualizer with Three.js)
 - [ ] Develop xsim module (system simulator with stress testing)
 - [ ] Develop xbe module (browser extension wallet and node)
 - [ ] Develop xda module (Electron desktop app wallet and node)
 
 **Production-Grade Features (Critical):**
+
 - [ ] Implement structured logging (Winston/Pino) with log levels
 - [ ] Add metrics collection (Prometheus) and monitoring
 - [ ] Implement rate limiting and DoS protection
@@ -578,12 +595,14 @@ core/
 - [ ] Write user guides and deployment documentation
 
 **Advanced Features:**
+
 - [ ] Implement Level 2+ hierarchical cube growth (super-cubes, mega-cubes)
 - [ ] Implement encrypted coordinate delivery mechanism in xsc
 - [ ] Complete LevelDB persistence in xvsm and xpc
 - [ ] Integrate real WebTorrent gossip protocol in xpc
 
 **Deployment & Operations:**
+
 - [ ] Create Dockerfile and docker-compose.yml
 - [ ] Set up testnet deployment (4-6 nodes on cloud VMs)
 - [ ] Implement configuration management (YAML/JSON configs)
@@ -591,7 +610,23 @@ core/
 - [ ] Set up monitoring and alerting infrastructure
 
 **Testing & Quality:**
+
 - [ ] Expand E2E test coverage
 - [ ] Implement load testing and stress testing
 - [ ] Add security testing (fuzzing, penetration tests)
 - [ ] Create performance benchmark suite
+
+### To-dos
+
+- [ ] Phase 1: Develop xid module (MAYO WASM port, key generation, signing/verification) - Foundation layer, no dependencies
+- [ ] Phase 1: Develop xn module (libp2p setup, peer discovery, message routing) - Foundation layer, no dependencies
+- [ ] Root AI: Validate Phase 1 checkpoints - xid and xn APIs stable, basic functionality working
+- [ ] Phase 2: Develop xclt module (cubic ledger) - Requires xid + xn checkpoints
+- [ ] Root AI: Validate Phase 2 checkpoint - xclt integration with xid+xn passing
+- [ ] Phase 3: Develop xvsm module (Verkle tree state machine) - Requires xclt checkpoint
+- [ ] Phase 3: Develop xpc module (peer consensus) - Requires xid+xn+xclt checkpoints
+- [ ] Root AI: Validate Phase 3 checkpoints - xvsm and xpc integration tests passing
+- [ ] Phase 4: Develop xsc module (storage & compute) - Requires xpc+xclt checkpoints
+- [ ] Root AI: Validate Phase 4 checkpoint - xsc integration with xpc+xclt passing
+- [ ] Phase 5: Develop tools/interfaces (xcli, xv, xsim, xbe, xda) in parallel - Requires all core modules ready
+- [ ] Root AI: Run end-to-end integration tests across all modules
