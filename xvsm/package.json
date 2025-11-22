@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "main": "index.js",
-  "description": "XMBL Virtual State Machine"
+  "description": "XMBL Virtual State Machine",
+  "dependencies": {
+    "level": "^10.0.0",
+    "wasmtime": "0.0.2"
+  }
 }
-
-
-

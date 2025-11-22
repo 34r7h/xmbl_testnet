@@ -3,8 +3,16 @@
   "version": "0.1.0",
   "type": "module",
   "main": "index.js",
-  "description": "XMBL Cubic Ledger Technology"
+  "description": "XMBL Cubic Ledger Technology",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch"
+  },
+  "dependencies": {
+    "level": "^8.0.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "@jest/globals": "^29.7.0"
+  }
 }
-
-
-

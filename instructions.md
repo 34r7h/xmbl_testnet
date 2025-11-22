@@ -19,6 +19,7 @@ XMBL (eXtensible Modular Blockchain Ledger) is a next-generation blockchain ecos
 - **Storage**: LevelDB for state, P2P sharding for distributed storage
 - **Cryptography**: MAYO signatures (C ported to WASM via Emscripten)
 - **Visualization**: Three.js for 3D cubic state rendering
+- **Geometric Cryptography**: 3D coordinate system with fractal addressing for transaction mapping and permission verification
 
 ### Benefits Over EVM
 
@@ -54,10 +55,11 @@ xda (Desktop App) ← all modules
 
 - **xid**: Quantum-resistant identity and signature system
 - **xn**: P2P networking, discovery, libp2p-js, WebTorrent gossip
-- **xclt**: Cubic ledger with 3D geometry for state organization
+- **xclt**: Cubic ledger with 3D geometry for state organization and geometric cryptography (coordinates, vectors, fractal addressing)
 - **xvsm**: WASM-powered state machine with Verkle tree diffs
 - **xpc**: Peer Consensus Layer with user-as-validator model
 - **xsc**: P2P storage (sharding/erasure coding) and WASM compute
+  - **TODO**: Implement encrypted message mechanism for delivering final transaction coordinates/vectors to users (encrypted with their public keys) when higher-dimensional cubes are finalized
 - **xcli**: Command-line interface for all system operations
 - **xv**: 3D visualization of system state and processes
 - **xsim**: End-to-end system simulator with random behaviors

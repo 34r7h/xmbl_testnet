@@ -7,7 +7,7 @@ import { noise } from '@chainsafe/libp2p-noise';
 import { yamux } from '@chainsafe/libp2p-yamux';
 import { mdns } from '@libp2p/mdns';
 import { identify } from '@libp2p/identify';
-import { multiaddr } from 'multiaddr';
+import { multiaddr } from '@multiformats/multiaddr';
 import { EventEmitter } from 'events';
 import { PeerDiscovery } from './discovery.js';
 import { PubSubManager } from './pubsub.js';
