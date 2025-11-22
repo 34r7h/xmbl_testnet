@@ -18,6 +18,44 @@ export class StateMachine {
     for (let i = 0; i < this.totalShards; i++) {
       this.shards.push(new StateShard(i, this.totalShards));
     }
+    
+    // Integration: xclt for state commitments from ledger
+    this.xclt = options.xclt || null;
+    
+    // Listen to ledger events if available
+    if (this.xclt) {
+      this.xclt.on('block:added', (block) => {
+        this._handleLedgerBlock(block);
+      });
+      
+      this.xclt.on('cube:complete', (cube) => {
+        this._handleCubeComplete(cube);
+      });
+    }
+  }
+  
+  _handleLedgerBlock(block) {
+    // Process state diff transactions from ledger blocks
+    if (block.tx && block.tx.type === 'state_diff' && block.tx.args) {
+      try {
+        const diff = new StateDiff(block.id, block.tx.args);
+        this.diffs.push(diff);
+        
+        // Update state tree
+        for (const [key, value] of Object.entries(block.tx.args)) {
+          this.stateTree.insert(key, value);
+        }
+      } catch (error) {
+        console.warn('Failed to process ledger block state diff:', error.message);
+      }
+    }
+  }
+  
+  _handleCubeComplete(cube) {
+    // Handle cube completion for state commitment
+    // State root can be calculated from current state
+    const stateRoot = this.stateTree.getRoot();
+    console.log(`State commitment for cube ${cube.id}: ${stateRoot}`);
   }
 
   async executeTransaction(txId, wasmCode, input, shardKey = null) {

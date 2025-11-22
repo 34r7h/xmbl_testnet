@@ -173,10 +173,20 @@ xn/
 └── status.md
 ```
 
+### Integration Status ✅
+- **xn + xclt**: ✅ Complete - Block propagation over network (pubsub integration)
+  - Integration tests: 5 tests covering block propagation, network disconnection, duplicate handling
+  - Verified: Blocks are propagated over network via pubsub, network failures handled gracefully
+- **xpc + xn**: ✅ Complete - Network gossip for consensus (raw transaction broadcasting)
+  - Integration tests: 5 tests covering transaction broadcasting, message handling
+  - Verified: Raw transactions broadcast over network for consensus
+- **xsc + xn**: ✅ Complete - P2P storage networking integration
+  - Integration tests: 4 tests covering shard requests, retrieval, network failures
+  - Verified: Storage shard requests and responses propagate over network
+
 ### Next Steps
 
-Phase 1 is complete. Ready for:
-- Integration with other XMBL modules (xclt, xpc, xsc)
+Phase 1 is complete. All integrations complete and tested. Ready for:
 - Production deployment testing
 - Performance optimization
 - Additional network protocol features

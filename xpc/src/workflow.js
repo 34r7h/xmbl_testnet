@@ -4,12 +4,32 @@ import { EventEmitter } from 'events';
 import { createHash } from 'crypto';
 
 export class ConsensusWorkflow extends EventEmitter {
-  constructor() {
+  constructor(options = {}) {
     super();
     this.mempool = new Mempool();
     this.taskManager = new ValidationTaskManager();
     this.requiredValidations = 3; // Configurable
     this.rawTxToId = new Map(); // Map rawTxId to leaderId for lookup
+    
+    // Integration: xid for signature verification
+    this.xid = options.xid || null;
+    
+    // Integration: xclt for final transaction inclusion
+    this.xclt = options.xclt || null;
+    
+    // Integration: xn for network gossip
+    this.xn = options.xn || null;
+    
+    // Listen for finalized transactions and add to ledger
+    this.on('tx:finalized', async (data) => {
+      if (this.xclt) {
+        try {
+          await this.xclt.addTransaction(data.txData);
+        } catch (error) {
+          console.error('Failed to add finalized transaction to ledger:', error);
+        }
+      }
+    });
   }
 
   async submitTransaction(leaderId, txData) {
@@ -54,6 +74,27 @@ export class ConsensusWorkflow extends EventEmitter {
     // Find task leader
     const task = this._findTask(taskId);
     if (!task) return;
+    
+    // Integration: Verify signature if xid available
+    if (this.xid) {
+      const rawTx = this._getRawTransaction(rawTxId);
+      if (rawTx && rawTx.txData && rawTx.txData.sig && rawTx.txData.publicKey) {
+        try {
+          const { Identity } = await import('xid');
+          const isValid = await Identity.verifyTransaction(rawTx.txData, rawTx.txData.publicKey);
+          if (!isValid) {
+            console.warn('Validation failed: Invalid signature');
+            return;
+          }
+        } catch (error) {
+          // If xid module not available, skip verification
+          if (error.code !== 'ERR_MODULE_NOT_FOUND') {
+            console.warn('Signature verification error:', error.message);
+            return;
+          }
+        }
+      }
+    }
     
     // Mark task complete
     this.taskManager.completeTask(task.leaderId, taskId);

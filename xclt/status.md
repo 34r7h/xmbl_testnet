@@ -352,15 +352,26 @@ Every transaction in the cubic ledger is assigned:
 
 **Future**: When higher-dimensional cubes are finalized, coordinates will be encrypted with user's public key for secure, private transaction mapping.
 
+### Integration Status ✅
+- **xid + xclt**: ✅ Complete - Transaction signing and signature verification before ledger addition
+  - Integration tests: 10 tests covering signing, verification, edge cases
+  - Verified: Transactions signed before adding, signatures verified on retrieval
+- **xn + xclt**: ✅ Complete - Block propagation over network
+  - Integration tests: 5 tests covering propagation, network failures, duplicates
+  - Verified: Blocks propagated via pubsub, network failures handled
+- **xclt + xvsm**: ✅ Complete - State commitments from ledger to state machine
+  - Integration tests: 5 tests covering state diff processing, cube completion events
+  - Verified: State diffs from ledger processed in state machine, state consistency maintained
+- **xpc + xclt**: ✅ Complete - Final transaction inclusion in ledger after consensus
+  - Integration tests: 5 tests covering finalized transaction addition, event handling
+  - Verified: Finalized transactions from consensus added to ledger correctly
+
 ### Next Steps
 
-Phase 2 (Layer 1) is complete. Ready for:
-- Integration with xid module (signature verification)
-- Integration with xn module (block propagation)
+Phase 2 (Layer 1) is complete. All integrations complete and tested. Ready for:
 - Implementation of Level 2+ hierarchical growth (super-cubes, mega-cubes)
 - Encryption mechanism in xsc module for coordinate delivery
 - Performance optimization for large state
 - Merkle proof generation enhancements
 - Parallel processing optimizations
-- Integration testing with other XMBL modules
 

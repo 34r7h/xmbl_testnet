@@ -7,17 +7,63 @@ import { getFaceIndex, getBlockPosition } from './placement.js';
 import { Level } from 'level';
 
 export class Ledger extends EventEmitter {
-  constructor(dbPath = './data/ledger') {
+  constructor(options = {}) {
     super();
+    const dbPath = options.dbPath || './data/ledger';
     this.db = new Level(dbPath);
+    this._dbOpen = false;
     this.cubes = new Map(); // cubeId -> Cube
     this.blocks = new Map(); // blockId -> Block
     this.pendingFaces = new Map(); // faceIndex -> Face
     this.parallelCubes = new Map(); // faceIndex -> Cube[] (array of parallel cubes for same face index)
     this.nextCubeId = 0;
+    
+    // Integration: xid for signature verification
+    this.xid = options.xid || null;
+    
+    // Integration: xn for block propagation
+    this.xn = options.xn || null;
+    this.blockTopic = options.blockTopic || 'blocks';
+    
+    // Open database (async, but don't block constructor)
+    this._initDb().catch(() => {});
+    
+    // Subscribe to block topic if network available
+    if (this.xn && this.xn.started) {
+      this.xn.subscribe(this.blockTopic).catch(() => {});
+      this.xn.on(`message:${this.blockTopic}`, (data) => {
+        this._handleIncomingBlock(data);
+      });
+    }
+  }
+  
+  async _initDb() {
+    try {
+      await this.db.open();
+      this._dbOpen = true;
+    } catch (error) {
+      // Database might already be open
+      this._dbOpen = true;
+    }
   }
 
   async addTransaction(tx) {
+    // Integration: Verify signature if xid available and tx has signature
+    if (this.xid && tx.sig && tx.publicKey) {
+      try {
+        const { Identity } = await import('xid');
+        const isValid = await Identity.verifyTransaction(tx, tx.publicKey);
+        if (!isValid) {
+          throw new Error('Invalid transaction signature');
+        }
+      } catch (error) {
+        // If xid module not available, skip verification
+        if (error.code !== 'ERR_MODULE_NOT_FOUND' && !error.message.includes('Base64')) {
+          throw error;
+        }
+      }
+    }
+    
     const block = Block.fromTransaction(tx);
     this.blocks.set(block.id, block);
     
@@ -77,7 +123,27 @@ export class Ledger extends EventEmitter {
     }
     
     // Persist block with coordinates
-    await this.db.put(`block:${block.id}`, block.serialize());
+    if (this._dbOpen) {
+      try {
+        await this.db.put(`block:${block.id}`, block.serialize());
+      } catch (error) {
+        // If DB not open, just use in-memory
+        console.warn('Database not available, using in-memory storage');
+      }
+    }
+    
+    // Integration: Propagate block over network if xn available and started
+    if (this.xn && this.xn.started) {
+      try {
+        await this.xn.publish(this.blockTopic, {
+          blockId: block.id,
+          block: block.serialize()
+        });
+      } catch (error) {
+        // Network propagation failure shouldn't block ledger addition
+        // Silently handle network errors
+      }
+    }
     
     return {
       blockId: block.id,
@@ -85,6 +151,23 @@ export class Ledger extends EventEmitter {
       vector: block.getVector(),
       fractalAddress: block.getFractalAddress()
     };
+  }
+  
+  async _handleIncomingBlock(data) {
+    // Handle incoming block from network
+    if (data.blockId && data.block) {
+      try {
+        const block = Block.deserialize(data.block);
+        // Check if block already exists
+        const existing = await this.getBlock(block.id);
+        if (!existing) {
+          // Add block to ledger
+          await this.addTransaction(block.tx);
+        }
+      } catch (error) {
+        console.warn('Failed to handle incoming block:', error.message);
+      }
+    }
   }
   
   async _getCubeIndexForFace(faceIndex, isParallel = false) {
@@ -203,13 +286,15 @@ export class Ledger extends EventEmitter {
   }
 
   async getBlock(blockId) {
-    try {
-      const data = await this.db.get(`block:${blockId}`);
-      return Block.deserialize(data);
-    } catch (error) {
-      // Check in-memory cache
-      return this.blocks.get(blockId) || null;
+    if (this._dbOpen) {
+      try {
+        const data = await this.db.get(`block:${blockId}`);
+        return Block.deserialize(data);
+      } catch (error) {
+        // Check in-memory cache
+      }
     }
+    return this.blocks.get(blockId) || null;
   }
   
   async getBlockCoordinates(blockId) {

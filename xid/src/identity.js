@@ -50,6 +50,9 @@ export class Identity {
   }
 
   _base64ToBytes(base64) {
+    if (!base64) {
+      throw new Error('Base64 string is required');
+    }
     if (typeof Buffer !== 'undefined') {
       return Buffer.from(base64, 'base64');
     }

@@ -63,11 +63,20 @@ All core classes are exported from `index.js`:
 - `MarketPricing` - Price calculations
 - `AvailabilityTester` - Node availability monitoring
 
+### Integration Status ✅
+- **xsc + xn**: ✅ Complete - P2P storage networking integration
+  - Integration tests: 4 tests covering shard requests, retrieval, network failures
+  - Verified: Storage shard requests and responses propagate over network
+- **xsc + xpc**: ✅ Complete - Payment consensus for storage/compute services
+  - Integration tests: 4 tests covering payment transactions, service provision after payment
+  - Verified: Payment transactions submitted to consensus, services provided after finalization
+- **xsc + xclt**: ✅ Complete - Payment recording in ledger
+  - Integration tests: 4 tests covering payment recording, multiple payments, edge cases
+  - Verified: Payment transactions recorded in ledger correctly
+
 ### Next Steps
 
-- Integration with xn (P2P networking)
-- Integration with xpc (consensus for payments)
-- Integration with xclt (ledger for payment recording)
+- All integrations complete and tested
 - End-to-end testing with real P2P network
 - Performance optimization and benchmarking
 

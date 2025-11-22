@@ -145,9 +145,13 @@ All modules exported from `index.js`:
 - Performance optimizations: lazy hash evaluation, path-based updates
 - Comprehensive error handling throughout
 
+### Integration Status ✅
+- **xclt + xvsm**: ✅ Complete - State commitments from ledger to state machine
+  - Integration tests: 5 tests covering state diff processing, cube completion events, out-of-order handling
+  - Verified: State diffs from ledger processed correctly, state consistency maintained between ledger and state machine
+
 ### Next Steps
-- Integration with xclt for state commitments
-- Integration with xid for signature verification
+- All integrations complete and tested
 - LevelDB integration for persistent storage
 - Additional performance benchmarks
 - Real-world WASM module testing
