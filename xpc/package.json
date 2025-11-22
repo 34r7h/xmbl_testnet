@@ -3,8 +3,13 @@
   "version": "0.1.0",
   "type": "module",
   "main": "index.js",
-  "description": "XMBL Peer Consensus"
+  "description": "XMBL Peer Consensus",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+  },
+  "dependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.2.0",
+    "level": "^10.0.0"
+  }
 }
-
-
-

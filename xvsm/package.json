@@ -4,8 +4,15 @@
   "type": "module",
   "main": "index.js",
   "description": "XMBL Virtual State Machine",
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+  },
   "dependencies": {
     "level": "^10.0.0",
     "wasmtime": "0.0.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.2.0"
   }
 }
