@@ -12,7 +12,7 @@ const modules = [
   { name: 'XID', port: 3003 },
   { name: 'XPC', port: 3004 },
   { name: 'XSC', port: 3005 },
-  { name: 'XSIM', port: 3006 },
+  // XSIM removed - should only be started by visualizer when needed
   { name: 'XCLI', port: 3007 },
   { name: 'XV', port: 3008 }
 ]

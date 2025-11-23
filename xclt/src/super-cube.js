@@ -14,6 +14,19 @@ export class SuperCube extends Cube {
   }
 
   /**
+   * Get average timestamp - only for level 1 (atomic cubes)
+   * For levels 2+, timestamps are not used - everything is hash-sorted
+   */
+  getAverageTimestamp() {
+    // Only level 1 uses timestamps
+    if (this.level === 1) {
+      return super.getAverageTimestamp();
+    }
+    // For levels 2+, return null - no timestamps used
+    return null;
+  }
+
+  /**
    * Add a child cube to this super-cube
    * @param {number} cubeIndex - Index of the child cube
    * @param {Cube} cube - The child cube to add
@@ -33,47 +46,28 @@ export class SuperCube extends Cube {
 
   /**
    * Form faces from child cubes
-   * For Level 2: 27 cubes form 3 faces (9 cubes per face)
+   * This is now handled by the ledger's recursive formation logic
+   * Faces are formed from 9 cubes (sorted by hash), then cubes from 3 faces (sorted by hash)
    * @private
    */
   _formFacesFromCubes() {
-    // Group cubes into faces based on their positions
-    // Face 0: cubes 0-8 (z = -1)
-    // Face 1: cubes 9-17 (z = 0)
-    // Face 2: cubes 18-26 (z = 1)
-    
-    const faceGroups = [
-      Array.from({ length: 9 }, (_, i) => i),      // Face 0
-      Array.from({ length: 9 }, (_, i) => i + 9),  // Face 1
-      Array.from({ length: 9 }, (_, i) => i + 18)  // Face 2
-    ];
-
-    // For now, we'll use the cube IDs as face roots
-    // In a full implementation, we'd create Face objects from the cubes
-    // This is a simplified version
-    for (let faceIndex = 0; faceIndex < 3; faceIndex++) {
-      const cubeIds = faceGroups[faceIndex]
-        .map(idx => {
-          const cube = this.childCubes.get(idx);
-          return cube ? cube.id : null;
-        })
-        .filter(id => id !== null)
-        .sort()
-        .join('');
-
-      // Create a face-like structure
-      // In full implementation, would create actual Face objects
-      const faceRoot = createHash('sha256').update(cubeIds).digest('hex');
-      // Store face root for super-cube ID calculation
-    }
+    // Faces are now formed by the ledger's _formNextLevelFace method
+    // This method is kept for backward compatibility but is no longer used
+    // The recursive structure is: 9 cubes -> 1 face, 3 faces -> 1 cube
   }
 
   /**
    * Check if super-cube is complete
-   * For Level 2: complete when we have 27 cubes
+   * A cube is complete when it has 3 faces (formed from 9 cubes each)
+   * This is now handled by the ledger's recursive formation logic
    */
   isComplete() {
-    return this.childCubes.size >= this.maxCubes;
+    // For cubes with faces (from recursive formation), check if we have 3 faces
+    if (this.faces && this.faces.size === 3) {
+      return true;
+    }
+    // Legacy check for child cubes (no longer used in new recursive structure)
+    return this.childCubes && this.childCubes.size >= this.maxCubes;
   }
 
   /**

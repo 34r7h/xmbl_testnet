@@ -576,6 +576,12 @@ export class MempoolVisualizer {
 ### Module Dependencies
 
 - **All XMBL modules**: Subscribe to events for real-time updates
+- **xsim**: System simulator for generating test data (only in simulation mode)
+- **xclt**: Cubic ledger for block/cube events
+- **xn**: Network module for node topology and ping data
+- **xpc**: Compute module for transaction and mempool events
+- **xsc**: Storage module for storage node data
+- **xvsm**: State machine for state diff and assembly events
 
 ### Integration Pattern
 
@@ -583,16 +589,192 @@ export class MempoolVisualizer {
 import { VisualizerComponent } from 'xv';
 import { XCLT } from 'xclt';
 import { XPC } from 'xpc';
+import { XN } from 'xn';
+import { XSC } from 'xsc';
+import { XVSM } from 'xvsm';
 
-// Subscribe to module events
+// Subscribe to module events - ONLY use real events from modules
 xclt.on('block:added', (block) => {
+  // block must come from xclt, not generated locally
   visualizer.updateCube(block);
 });
 
 xpc.on('mempool:update', (counts) => {
+  // counts must come from xpc, not generated locally
   visualizer.updateMempool(counts);
 });
+
+xn.on('node:connected', (node) => {
+  // node data must come from xn, not generated locally
+  visualizer.addNode(node);
+});
+
+xn.on('ping:update', (pingData) => {
+  // ping data must come from xn, not generated locally
+  visualizer.updatePing(pingData);
+});
 ```
+
+### CRITICAL: NO FAKE DATA POLICY
+
+**THE VISUALIZER MUST NEVER GENERATE FAKE DATA. IT MUST ONLY DISPLAY DATA FROM ACTUAL XMBL MODULES.**
+
+#### What is NOT allowed:
+- ❌ Generating random activity/ping values with `Math.random()`
+- ❌ Creating fake node data in the visualizer
+- ❌ Generating fake transactions, blocks, or cubes
+- ❌ Using `simulation.js` or any fake data generators in production
+- ❌ Creating placeholder data when modules aren't connected
+- ❌ Generating fake mempool counts or state machine data
+
+#### What IS allowed:
+- ✅ Displaying data from xsim when in simulation mode (xsim generates the data)
+- ✅ Displaying data from xclt, xn, xpc, xsc, xvsm modules
+- ✅ Displaying empty state when testnet isn't up (this is expected)
+- ✅ Using real coordinate data from xclt geometry calculations
+- ✅ Using real ping/latency data from xn module
+
+#### When testnet is not available:
+- **EXPECT EMPTINESS** - This is correct behavior
+- Do NOT generate fake data to fill the void
+- Show connection status and "No data available" messages
+- Wait for actual network activity when testnet comes online
+
+### Data Source Modes
+
+1. **Simulation Mode**:
+   - Uses xsim SystemSimulator to generate test data
+   - xsim creates identities, transactions, state diffs, etc.
+   - Visualizer displays what xsim generates
+   - Bridge server connects xsim to visualizer via socket.io
+
+2. **Local Mode**:
+   - Connects to bridge server (localhost:3000)
+   - Bridge server connects to actual xclt and xsim modules
+   - Visualizer receives real events from modules
+   - NO fake data generation in visualizer
+
+3. **Testnet Mode**:
+   - Connects to testnet socket.io endpoint
+   - Receives real network data when testnet is running
+   - **When testnet is down, expect empty visualizations**
+   - Do NOT generate fake data to simulate activity
+
+### Files That Must Be Fixed
+
+The following files contain fake data generation that must be removed:
+
+1. **`server.js`** (lines 40-41):
+   - Removes `Math.random()` for activity and ping values
+   - Must use actual data from xsim or xn modules
+
+2. **`src/services/XMBLBridge.js`**:
+   - `startSimulation()` method generates fake data
+   - Should only be used when actually connecting to xsim
+   - Remove all `Math.random()` calls for node/block/transaction generation
+
+3. **`src/utils/simulation.js`**:
+   - Entire file generates fake data
+   - **DEPRECATED** - Should be removed or clearly marked as test-only
+   - Do not use in production visualizer
+
+### Required Integration Work
+
+1. **Remove all fake data generation**:
+   - Remove `Math.random()` calls for generating node activity, ping, positions
+   - Remove fake transaction generation
+   - Remove fake block/cube generation
+   - Remove `simulation.js` usage
+
+2. **Connect to real modules**:
+   - Bridge server must connect to actual xclt Ledger instance
+   - Bridge server must connect to actual xsim SystemSimulator
+   - Bridge server must connect to xn module for network topology
+   - Bridge server must connect to xpc for mempool data
+   - Bridge server must connect to xsc for storage data
+   - Bridge server must connect to xvsm for state machine data
+
+3. **Handle empty states gracefully**:
+   - When testnet is down, show "No data available"
+   - When modules aren't connected, show connection status
+   - Do NOT generate fake data to fill empty states
+
+4. **Use real coordinate data**:
+   - All block positions must come from xclt geometry calculations
+   - All cube positions must come from xclt
+   - Do NOT generate random positions
+
+5. **Use real network data**:
+   - Node activity must come from xn module
+   - Ping/latency must come from xn module
+   - Network topology must come from xn module
+   - Do NOT generate random network metrics
+
+## Outstanding Requirements
+
+Based on `status.md`, the following work is still required:
+
+### Module Integration
+
+- [ ] **Connect to xn module** for real network topology data
+  - Currently using fake activity/ping values in `server.js`
+  - Must connect to xn module and use real node data
+  - Must use real ping/latency measurements from xn
+
+- [ ] **Add xpc mempool visualization** with real transaction flow
+  - Currently missing real mempool integration
+  - Must connect to xpc module for mempool counts
+  - Must display real transaction flow through mempool stages
+
+- [ ] **Integrate xst (storage) module** for storage visualization
+  - Currently missing storage module integration
+  - Must connect to xsc module for storage node data
+  - Must display real storage usage and distribution
+
+- [ ] **Integrate xco (compute) module** for compute visualization
+  - Currently missing compute module integration
+  - Must connect to xpc module for compute task data
+  - Must display real compute activity and resource usage
+
+- [ ] **Add xsm (state machine) visualization**
+  - Currently missing state machine visualization
+  - Must connect to xvsm module for state diff and assembly events
+  - Must visualize state transitions and app-centric state assembly
+
+### Fake Data Removal
+
+- [ ] **Remove fake data from `server.js`**
+  - Lines 40-41: Remove `Math.random()` for activity and ping
+  - Must use real data from xn module or xsim
+
+- [ ] **Fix `XMBLBridge.js` `startSimulation()` method**
+  - Currently generates completely fake data
+  - Should only be used when actually connecting to xsim
+  - Remove all `Math.random()` calls for node/block/transaction generation
+
+- [ ] **Remove or deprecate `simulation.js`**
+  - Entire file generates fake data
+  - Should not be used in production
+  - Mark as deprecated or remove entirely
+
+### Testnet Integration
+
+- [ ] **Test with actual running XMBL testnet**
+  - Currently ready for testnet connection
+  - Must verify empty state handling when testnet is down
+  - Must verify real data display when testnet is up
+
+### Performance and UX
+
+- [ ] **Performance optimization** for large numbers of cubes/blocks
+  - Currently may have performance issues with many objects
+  - Implement level-of-detail (LOD) rendering
+  - Implement object pooling and culling
+
+- [ ] **Add cube/block selection and detail views**
+  - Currently no interaction with visualized objects
+  - Add click handlers for cubes and blocks
+  - Display detailed information on selection
 
 ## Terminal and Browser Monitoring
 
@@ -608,6 +790,16 @@ xpc.on('mempool:update', (counts) => {
   console.log(`FPS: ${stats.fps}, Objects: ${scene.children.length}`);
   ```
 
+- **Data Source**: Log current data source and connection status
+  ```javascript
+  console.log(`Data source: ${dataSource}, Connected: ${isConnected}`);
+  ```
+
+- **Module Connections**: Log which modules are connected
+  ```javascript
+  console.log(`Connected modules: ${connectedModules.join(', ')}`);
+  ```
+
 ### Screenshot Requirements
 
 Capture browser screenshots for:
@@ -615,6 +807,7 @@ Capture browser screenshots for:
 - Mempool bar charts
 - State machine graphs
 - Storage/compute maps
+- Empty state when testnet is down (to verify no fake data)
 
 ### Browser Console
 
@@ -622,6 +815,8 @@ Capture browser screenshots for:
 - **WebGL**: Check WebGL context
 - **Memory**: Monitor memory usage
 - **Errors**: Log rendering errors
+- **Data Source**: Display current data source and connection status
+- **Module Events**: Log events received from modules (for debugging)
 
 ### Console Logging
 
@@ -629,3 +824,6 @@ Capture browser screenshots for:
 - Include performance metrics
 - Log WebGL errors
 - Include object counts
+- Log data source changes
+- Log module connection/disconnection events
+- **DO NOT log fake data generation** - this should not exist

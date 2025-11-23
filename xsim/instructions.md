@@ -548,6 +548,7 @@ export class TransactionSimulator extends EventEmitter {
 ### Module Dependencies
 
 - **All XMBL modules**: xid, xn, xclt, xvsm, xpc, xsc
+- **xv**: Visualizer module (consumes xsim events via bridge server)
 
 ### Integration Pattern
 
@@ -555,15 +556,38 @@ export class TransactionSimulator extends EventEmitter {
 import { SystemSimulator } from 'xsim';
 import { XCLT } from 'xclt';
 import { XPC } from 'xpc';
+import { XID } from 'xid';
+import { XN } from 'xn';
+import { XSC } from 'xsc';
+import { XVSM } from 'xvsm';
 
 const sim = new SystemSimulator({
   identityRate: 2,
-  transactionRate: 10
+  transactionRate: 10,
+  stateDiffRate: 5
 });
 
-// Connect to real modules
+// Connect to real modules - xsim generates data, modules process it
+sim.identitySim.on('identity:created', async (identity) => {
+  // Use actual xid module to create identity
+  const realIdentity = await XID.create(identity);
+  // Emit to xn for network topology
+  XN.addNode(realIdentity);
+});
+
 sim.transactionSim.on('transaction:created', async (tx) => {
-  await xpc.submitTransaction('leader1', tx);
+  // Submit to actual xpc module
+  await XPC.submitTransaction('leader1', tx);
+});
+
+sim.stateDiffSim.on('state:diff:created', async (diff) => {
+  // Submit to actual xvsm module
+  await XVSM.addStateDiff(diff);
+});
+
+sim.storageComputeSim.on('storage:operation', async (op) => {
+  // Submit to actual xsc module
+  await XSC.handleOperation(op);
 });
 
 sim.on('metrics:update', (metrics) => {
@@ -572,6 +596,144 @@ sim.on('metrics:update', (metrics) => {
 
 await sim.start();
 ```
+
+### Integration with XV Visualizer
+
+xsim integrates with xv visualizer via the bridge server (`xv/server.js`):
+
+1. **Bridge Server Setup**:
+   - Bridge server runs on port 3000
+   - Connects to xsim SystemSimulator
+   - Connects to xclt Ledger
+   - Bridges events to visualizer via socket.io
+
+2. **Event Flow**:
+   ```
+   xsim → bridge server → socket.io → xv visualizer
+   xclt → bridge server → socket.io → xv visualizer
+   ```
+
+3. **Events Bridged**:
+   - `identity:created` → `xn:node:connected` (with real activity/ping from xn)
+   - `transaction:created` → `xpc:transaction:new`
+   - `state:diff:created` → `xvsm:state:diff`
+   - `state:assembled` → `xvsm:state:assembled`
+   - `storage:operation` → `xsc:operation`
+   - `compute:operation` → `xpc:compute:operation`
+
+### CRITICAL: Data Generation Policy
+
+**xsim IS a simulator - it generates test data. However, it must coordinate with real modules.**
+
+#### What xsim does:
+- ✅ Generates test identities, transactions, state diffs, etc.
+- ✅ Uses faker/chance for realistic test data generation
+- ✅ Emits events that can be consumed by visualizer or real modules
+- ✅ Provides deterministic mode for reproducible tests
+
+#### What xsim must NOT do:
+- ❌ Generate fake network topology data (must use xn module)
+- ❌ Generate fake ping/latency data (must use xn module)
+- ❌ Generate fake activity metrics (must use actual module metrics)
+- ❌ Bypass real modules when they're available
+
+#### Integration Requirements:
+
+1. **When used with real modules**:
+   - xsim generates test data (identities, transactions, etc.)
+   - Real modules process the data (xid, xpc, xclt, etc.)
+   - Real modules emit their own events with actual metrics
+   - Visualizer displays data from real modules, not xsim directly
+
+2. **When used standalone (simulation mode)**:
+   - xsim generates all test data
+   - Bridge server forwards xsim events to visualizer
+   - Visualizer displays simulated data
+   - This is acceptable for development/testing
+
+3. **Network data**:
+   - xsim should NOT generate fake ping/latency/activity
+   - When xn module is available, use real network metrics
+   - When xn is not available, xsim can generate basic test data
+   - Bridge server should enrich with real data when available
+
+### Required Integration Work
+
+1. **Connect to real modules**:
+   - xsim should optionally connect to real xid, xpc, xclt, xvsm, xsc modules
+   - When modules are available, use them instead of just emitting events
+   - Real modules provide actual metrics and processing
+
+2. **Bridge server enhancements**:
+   - Bridge server must connect to xn module for real network topology
+   - Bridge server must enrich xsim identity events with real xn node data
+   - Bridge server must use real ping/latency from xn, not generate fake values
+
+3. **Event coordination**:
+   - xsim events should trigger real module operations
+   - Real module events should be forwarded to visualizer
+   - Visualizer should prefer real module events over xsim events
+
+4. **Metrics collection**:
+   - Collect metrics from real modules when available
+   - Fall back to xsim metrics only when modules aren't connected
+   - Distinguish between simulated and real metrics in output
+
+## Outstanding Requirements
+
+Based on `status.md`, the following work is still required:
+
+### Module Integration
+
+- [ ] **Integrate with actual XMBL modules** (xid, xn, xclt, xvsm, xpc, xsc)
+  - Currently xsim generates data but doesn't always connect to real modules
+  - Must connect to real modules when available
+  - Must use real module metrics instead of simulated ones
+
+- [ ] **Add failure injection** (network failures, node crashes)
+  - Currently missing failure simulation
+  - Must simulate network partitions
+  - Must simulate node crashes and recovery
+  - Must simulate validation failures
+
+- [ ] **Add browser monitoring capabilities** (web dashboard)
+  - Currently only has terminal monitoring
+  - Must provide web interface for metrics
+  - Must integrate with xv visualizer
+
+- [ ] **Add metrics export/visualization** (JSON, CSV, Prometheus)
+  - Currently only displays metrics in terminal
+  - Must export metrics in standard formats
+  - Must support Prometheus metrics endpoint
+
+- [ ] **Add performance benchmarking**
+  - Currently missing performance benchmarks
+  - Must measure throughput (tx/s, identities/s)
+  - Must measure latency (validation time, state assembly time)
+  - Must measure resource usage (CPU, memory)
+
+- [ ] **Add stress testing modes**
+  - Currently missing stress testing
+  - Must support high-rate simulation
+  - Must support large-scale simulation (many nodes)
+  - Must support long-running simulations
+
+- [ ] **Add configuration file support**
+  - Currently only supports environment variables
+  - Must support JSON/YAML configuration files
+  - Must support per-simulator configuration
+
+### Bridge Server Integration
+
+- [ ] **Enhance bridge server to use real module data**
+  - Bridge server must connect to xn module for real network topology
+  - Bridge server must enrich xsim events with real module metrics
+  - Bridge server must use real ping/latency from xn, not generate fake values
+
+- [ ] **Coordinate events between xsim and real modules**
+  - xsim events should trigger real module operations
+  - Real module events should be forwarded to visualizer
+  - Must handle both simulated and real data sources
 
 ## Terminal and Browser Monitoring
 
@@ -592,6 +754,16 @@ await sim.start();
   console.log(`Rate: ${txRate} tx/s, ${idRate} identities/s`);
   ```
 
+- **Module Connections**: Log which modules are connected
+  ```javascript
+  console.log(`Connected modules: ${connectedModules.join(', ')}`);
+  ```
+
+- **Data Source**: Distinguish between simulated and real data
+  ```javascript
+  console.log(`Data source: ${isUsingRealModules ? 'real modules' : 'simulated'}`);
+  ```
+
 ### Screenshot Requirements
 
 Capture terminal output for:
@@ -599,6 +771,8 @@ Capture terminal output for:
 - Real-time metrics
 - Rate statistics
 - Error logs
+- Module connection status
+- Metrics showing simulated vs real data
 
 ### Console Logging
 
@@ -606,3 +780,5 @@ Capture terminal output for:
 - Include timing information
 - Log metrics updates
 - Include error details
+- Log module connection/disconnection events
+- **Distinguish between simulated and real data** in logs

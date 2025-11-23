@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
-import WebTorrent from 'webtorrent';
+let WebTorrent = null;
+// WebTorrent is optional - will be loaded lazily if available
 
 /**
  * Consensus Gossip with WebTorrent integration
@@ -9,7 +10,7 @@ export class ConsensusGossip extends EventEmitter {
   constructor(options = {}) {
     super();
     this.broadcasts = []; // Store broadcasts for testing
-    this.client = new WebTorrent();
+    this.client = null; // Will be initialized lazily if WebTorrent is available
     this.swarms = new Map(); // topic -> swarm
     
     // Integration: xn for network gossip (fallback)
@@ -33,6 +34,19 @@ export class ConsensusGossip extends EventEmitter {
    * @private
    */
   async _initSwarm() {
+    // Lazy load WebTorrent if available
+    if (!WebTorrent && !this.client) {
+      try {
+        const webtorrentModule = await import('webtorrent');
+        WebTorrent = webtorrentModule.default;
+        this.client = new WebTorrent();
+      } catch (error) {
+        // WebTorrent not available, skip
+        return;
+      }
+    }
+    
+    if (!this.client) return;
     try {
       const swarm = this.client.swarm(this.topic);
       this.swarms.set(this.topic, swarm);

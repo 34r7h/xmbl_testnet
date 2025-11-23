@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
-import { MAYOWasm } from 'xid';
+// import { MAYOWasm } from 'xid'; // Optional - xid module may not be available
 
 /**
  * Encrypted coordinate delivery mechanism

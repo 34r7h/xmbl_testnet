@@ -1,49 +1,86 @@
-import { getBlockPosition } from './placement.js';
+import { sortBlocksByHash } from './placement.js';
 import { createHash } from 'crypto';
 
 export class Face {
-  constructor(index) {
+  constructor(index, timestamp = null) {
     this.index = index;
-    this.blocks = new Map(); // position -> Block
+    this.timestamp = timestamp || process.hrtime.bigint(); // Nanosecond timestamp - key for deterministic placement
+    this.blocks = new Map(); // position -> Block (positions assigned when complete)
+    this.pendingBlocks = []; // Array of blocks before sorting
+    this._sorted = false; // Whether blocks have been sorted
   }
 
   addBlock(block) {
-    const position = getBlockPosition(block.id, block.digitalRoot);
-    const existingBlock = this.blocks.get(position);
+    // Skip if block already exists (by hash)
+    const blockHash = block.hash || createHash('sha256').update(block.id).digest('hex');
+    const existingBlock = Array.from(this.pendingBlocks).find(b => {
+      const bHash = b.hash || createHash('sha256').update(b.id).digest('hex');
+      return bHash === blockHash;
+    });
     
-    // If position is taken, compare timestamps
     if (existingBlock) {
-      // Earlier timestamp keeps position, later timestamp triggers parallel cube
-      if (block.timestamp < existingBlock.timestamp) {
-        // New block has earlier timestamp - replace existing
-        this.blocks.set(position, block);
-        return { conflict: true, resolved: true, displacedBlock: existingBlock };
-      } else {
-        // New block has later timestamp - should go to parallel cube
-        return { conflict: true, resolved: false, existingBlock };
-      }
+      return; // Block already exists, skip
     }
     
-    // No conflict, add block normally
-    this.blocks.set(position, block);
-    return { conflict: false };
+    // Skip if face already has 9 blocks
+    if (this.pendingBlocks.length >= 9) {
+      return; // Face is full
+    }
+    
+    // Add block to pending list
+    this.pendingBlocks.push(block);
+    
+    // When we have exactly 9 blocks, sort by hash and assign positions 0-8
+    if (this.pendingBlocks.length === 9) {
+      this._sortAndAssignPositions();
+    }
+  }
+  
+  _sortAndAssignPositions() {
+    if (this._sorted && this.blocks.size === 9) return;
+    
+    // Sort blocks by hash (lowest hash = position 0, highest = position 8)
+    const sorted = sortBlocksByHash(this.pendingBlocks);
+    this.blocks = sorted;
+    this._sorted = true;
   }
   
   getAverageTimestamp() {
-    if (this.blocks.size === 0) return 0;
-    const timestamps = Array.from(this.blocks.values()).map(b => b.timestamp);
-    return timestamps.reduce((sum, ts) => sum + ts, 0) / timestamps.length;
+    const blocksToUse = this.pendingBlocks.length > 0 ? this.pendingBlocks : Array.from(this.blocks.values());
+    if (blocksToUse.length === 0) return this.timestamp || BigInt(0);
+    // Use validator timestamp if available (from xpc validation), otherwise block timestamp
+    const timestamps = blocksToUse.map(b => {
+      const ts = b.tx?.validationTimestamp || b.timestamp;
+      return typeof ts === 'bigint' ? ts : BigInt(ts * 1000000); // Convert ms to ns if needed
+    });
+    const sum = timestamps.reduce((a, b) => a + b, BigInt(0));
+    return sum / BigInt(timestamps.length); // Return as bigint (nanoseconds)
   }
 
   getBlock(position) {
+    // Ensure blocks are sorted if face is complete
+    if (this.pendingBlocks.length === 9 && !this._sorted) {
+      this._sortAndAssignPositions();
+    }
     return this.blocks.get(position);
   }
 
   isComplete() {
-    return this.blocks.size === 9;
+    // Face is complete when it has 9 blocks (sorted by hash)
+    return this.pendingBlocks.length === 9 && this._sorted;
+  }
+
+  getHash() {
+    // Get hash of face for sorting (use merkle root)
+    return this.getMerkleRoot();
   }
 
   getMerkleRoot() {
+    // Ensure blocks are sorted before calculating merkle root
+    if (this.pendingBlocks.length === 9 && !this._sorted) {
+      this._sortAndAssignPositions();
+    }
+    
     // Build Merkle tree from blocks
     const blockHashes = Array.from({ length: 9 }, (_, i) => {
       const block = this.blocks.get(i);

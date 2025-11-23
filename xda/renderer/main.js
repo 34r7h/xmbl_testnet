@@ -1,22 +1,5 @@
-// Vue 3 renderer for XMBL Desktop App
 import { createApp } from 'vue';
+import App from './App.vue';
 
-const app = createApp({
-  data() {
-    return {
-      nodeStatus: 'connecting',
-      balance: 0
-    };
-  },
-  mounted() {
-    // Get node status
-    if (window.xmbl) {
-      window.xmbl.getNodeStatus().then(status => {
-        this.nodeStatus = status;
-      });
-    }
-  }
-});
-
+const app = createApp(App);
 app.mount('#app');
-

@@ -14,3 +14,4 @@ export default {
   maxWorkers: 1 // Run integration tests sequentially to avoid port conflicts
 };
 
+

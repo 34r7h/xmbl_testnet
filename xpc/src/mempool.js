@@ -106,6 +106,15 @@ export class Mempool extends EventEmitter {
     }
   }
 
+  async _deleteRawTx(leaderId, rawTxId) {
+    if (!this._dbOpen) return;
+    try {
+      await this.db.del(`rawTx:${leaderId}:${rawTxId}`);
+    } catch (error) {
+      // Ignore delete errors
+    }
+  }
+
   async addRawTransaction(leaderId, txData) {
     const rawTxId = this._hashTransaction(txData);
     
@@ -141,8 +150,24 @@ export class Mempool extends EventEmitter {
   }
 
   _hashTransaction(tx) {
-    const txStr = JSON.stringify(tx);
+    // Serialize BigInt values before stringifying
+    const serialized = this._serializeBigInts(tx);
+    const txStr = JSON.stringify(serialized);
     return createHash('sha256').update(txStr).digest('hex');
+  }
+
+  _serializeBigInts(obj) {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj === 'bigint') return obj.toString();
+    if (Array.isArray(obj)) return obj.map(item => this._serializeBigInts(item));
+    if (typeof obj === 'object') {
+      const result = {};
+      for (const [key, value] of Object.entries(obj)) {
+        result[key] = this._serializeBigInts(value);
+      }
+      return result;
+    }
+    return obj;
   }
 }
 

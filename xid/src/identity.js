@@ -50,44 +50,92 @@ export class Identity {
 
   /**
    * Derive XMBL address from public key
-   * @private
    * @param {string} publicKey - Base64-encoded public key
    * @returns {string} XMBL address (xmb prefix + 40 hex chars)
    */
-  _deriveAddress(publicKey) {
+  static deriveAddress(publicKey) {
+    if (!publicKey) {
+      throw new Error('Public key is required to derive address');
+    }
     // Hash public key to get address
-    const pkBytes = this._base64ToBytes(publicKey);
+    const pkBytes = Identity._base64ToBytesStatic(publicKey);
     const hash = createHash('sha256').update(pkBytes).digest('hex');
     return 'xmb' + hash.substring(0, 40); // XMBL address prefix
   }
 
   /**
-   * Sign a transaction with MAYO signature
-   * @param {Object} tx - Transaction object
-   * @returns {Promise<Object>} Transaction with signature added
+   * Derive XMBL address from public key (instance method)
+   * @private
+   * @param {string} publicKey - Base64-encoded public key
+   * @returns {string} XMBL address (xmb prefix + 40 hex chars)
    */
-  async signTransaction(tx) {
-    const mayo = await MAYOWasm.load();
-    // Create message to sign (tx without sig field)
-    const { sig, ...txWithoutSig } = tx;
-    const message = JSON.stringify(txWithoutSig);
-    const messageBytes = new TextEncoder().encode(message);
-    const signature = await mayo.sign(messageBytes, this.privateKey);
-    return { ...tx, sig: signature };
+  _deriveAddress(publicKey) {
+    return Identity.deriveAddress(publicKey);
   }
 
   /**
-   * Verify a signed transaction
-   * @param {Object} signedTx - Signed transaction object
-   * @param {string} publicKey - Base64-encoded public key
-   * @returns {Promise<boolean>} True if signature is valid
+   * Static helper to convert base64 to bytes
+   * @private
+   */
+  static _base64ToBytesStatic(base64) {
+    if (!base64) {
+      throw new Error('Base64 string is required');
+    }
+    if (typeof Buffer !== 'undefined') {
+      return Buffer.from(base64, 'base64');
+    }
+    // Browser fallback
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+
+  /**
+   * Sign a transaction with MAYO signature
+   * @param {Object} tx - Transaction object (must have from field set to this.address)
+   * @returns {Promise<Object>} Transaction with signature added (NO publicKey field)
+   */
+  async signTransaction(tx) {
+    const mayo = await MAYOWasm.load();
+    // Ensure from address is set to this identity's address
+    const txWithAddress = { ...tx, from: this.address };
+    // Create message to sign (tx without sig and publicKey fields)
+    const { sig, publicKey, ...txWithoutSig } = txWithAddress;
+    const message = JSON.stringify(txWithoutSig);
+    const messageBytes = new TextEncoder().encode(message);
+    const signature = await mayo.sign(messageBytes, this.privateKey);
+    // Return transaction with signature, but NO publicKey
+    return { ...txWithAddress, sig: signature };
+  }
+
+  /**
+   * Verify a signed transaction and check that signer owns the from address
+   * @param {Object} signedTx - Signed transaction object (must have sig and from fields)
+   * @param {string} publicKey - Base64-encoded public key to verify signature
+   * @returns {Promise<boolean>} True if signature is valid AND public key derives to from address
    */
   static async verifyTransaction(signedTx, publicKey) {
+    if (!signedTx.sig || !signedTx.from) {
+      return false;
+    }
+    
     const mayo = await MAYOWasm.load();
     const { sig, ...txWithoutSig } = signedTx;
     const message = JSON.stringify(txWithoutSig);
     const messageBytes = new TextEncoder().encode(message);
-    return await mayo.verify(messageBytes, sig, publicKey);
+    
+    // Verify signature
+    const isValidSig = await mayo.verify(messageBytes, sig, publicKey);
+    if (!isValidSig) {
+      return false;
+    }
+    
+    // Verify that public key derives to the from address
+    const derivedAddress = Identity.deriveAddress(publicKey);
+    return derivedAddress === signedTx.from;
   }
 
   _base64ToBytes(base64) {

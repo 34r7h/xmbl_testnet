@@ -3,38 +3,10 @@
 <head>
   <meta charset="utf-8">
   <title>XMBL Wallet</title>
-  <style>
-    body {
-      width: 400px;
-      padding: 20px;
-      font-family: Arial, sans-serif;
-    }
-    .wallet-section {
-      margin-bottom: 20px;
-    }
-    button {
-      padding: 10px;
-      margin: 5px;
-      cursor: pointer;
-    }
-  </style>
 </head>
 <body>
-  <h1>XMBL Wallet</h1>
-  <div class="wallet-section">
-    <h2>Balance</h2>
-    <p id="balance">0 XMBL</p>
-  </div>
-  <div class="wallet-section">
-    <h2>Actions</h2>
-    <button id="sendTx">Send Transaction</button>
-    <button id="receiveTx">Receive</button>
-  </div>
-  <div class="wallet-section">
-    <h2>Node Status</h2>
-    <p id="nodeStatus">Connecting...</p>
-  </div>
-  <script src="popup.js"></script>
+  <div id="app"></div>
+  <script src="dist/popup.js"></script>
 </body>
 </html>
 

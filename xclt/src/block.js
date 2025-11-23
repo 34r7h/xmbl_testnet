@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { calculateDigitalRoot } from './digital-root.js';
+import { calculateDigitalRoot, calculateDigitalRootFromHash } from './digital-root.js';
 import { validateTransaction } from './transaction-validator.js';
 import { calculateAbsoluteCoords, calculateVector, calculateFractalAddress } from './geometry.js';
 
@@ -7,6 +7,7 @@ export class Block {
   constructor(id, tx, hash, digitalRoot, timestamp = null, location = null) {
     this.id = id;
     this.tx = tx;
+    this.txId = tx?.id || null; // Extract id from transaction object
     this.hash = hash;
     this.digitalRoot = digitalRoot;
     this.timestamp = timestamp || Date.now();
@@ -50,11 +51,20 @@ export class Block {
     // Validate transaction type
     validateTransaction(tx);
 
-    const txStr = JSON.stringify(tx);
+    // Serialize BigInt values before stringifying
+    const serialized = Block._serializeBigInts(tx);
+    const txStr = JSON.stringify(serialized);
     const hash = createHash('sha256').update(txStr).digest('hex');
     const id = hash.substring(0, 16);
-    const digitalRoot = calculateDigitalRoot(hash);
-    return new Block(id, tx, hash, digitalRoot);
+    
+    // Digital root is no longer used for placement (hash-based sorting instead)
+    // Keep for backward compatibility only
+    const digitalRoot = tx.digitalRoot || 0;
+    
+    // Use validator average timestamp if available (from xpc, nanoseconds), otherwise use tx timestamp or current time
+    const timestamp = tx.validationTimestamp || tx.timestamp || process.hrtime.bigint();
+    
+    return new Block(id, tx, hash, digitalRoot, timestamp);
   }
 
   serialize() {
@@ -79,6 +89,20 @@ export class Block {
     if (obj.vector) block.vector = obj.vector;
     if (obj.fractalAddress) block.fractalAddress = obj.fractalAddress;
     return block;
+  }
+
+  static _serializeBigInts(obj) {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj === 'bigint') return obj.toString();
+    if (Array.isArray(obj)) return obj.map(item => Block._serializeBigInts(item));
+    if (typeof obj === 'object') {
+      const result = {};
+      for (const [key, value] of Object.entries(obj)) {
+        result[key] = Block._serializeBigInts(value);
+      }
+      return result;
+    }
+    return obj;
   }
 }
 

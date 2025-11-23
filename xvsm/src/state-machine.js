@@ -105,7 +105,7 @@ export class StateMachine {
     }
   }
   
-  _handleLedgerBlock(block) {
+  async _handleLedgerBlock(block) {
     // Process state diff transactions from ledger blocks
     if (block.tx && block.tx.type === 'state_diff' && block.tx.args) {
       try {
