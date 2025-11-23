@@ -277,9 +277,21 @@ export class ConsensusWorkflow extends EventEmitter {
     console.log('[XPC] ===== EMITTING tx:finalized =====');
     
     // Convert BigInt values in txData to strings for serialization
-    const txDataSerialized = JSON.parse(JSON.stringify(txDataWithId, (key, value) => 
-      typeof value === 'bigint' ? value.toString() : value
-    ));
+    function serializeBigInt(obj) {
+      if (obj === null || obj === undefined) return obj;
+      if (typeof obj === 'bigint') return obj.toString();
+      if (Array.isArray(obj)) return obj.map(serializeBigInt);
+      if (typeof obj === 'object') {
+        const result = {};
+        for (const [key, value] of Object.entries(obj)) {
+          result[key] = serializeBigInt(value);
+        }
+        return result;
+      }
+      return obj;
+    }
+    
+    const txDataSerialized = serializeBigInt(txDataWithId);
     
     const finalizedData = { 
       txId: validatedHash, 

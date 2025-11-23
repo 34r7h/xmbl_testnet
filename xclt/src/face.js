@@ -43,6 +43,8 @@ export class Face {
     const sorted = sortBlocksByHash(this.pendingBlocks);
     this.blocks = sorted;
     this._sorted = true;
+    // Clear pendingBlocks after sorting - blocks are now in face.blocks Map
+    this.pendingBlocks = [];
   }
   
   getAverageTimestamp() {

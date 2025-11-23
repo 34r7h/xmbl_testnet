@@ -36,6 +36,7 @@ export class Block {
   }
   
   getCoordinates() {
+    // Always return valid coordinates (geometry functions handle invalid positions)
     return this.coordinates || { x: 0, y: 0, z: 0 };
   }
   

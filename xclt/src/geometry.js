@@ -19,6 +19,13 @@
  * @returns {Object} {x, y} local coordinates (-1, 0, 1)
  */
 export function positionToLocalCoords(position) {
+  // Position must be 0-8 for a 3x3 grid
+  if (position < 0 || position > 8) {
+    // For invalid positions, return center position (0, 0) as fallback
+    // This ensures coordinates are always valid
+    return { x: 0, y: 0 };
+  }
+  
   const row = Math.floor(position / 3);
   const col = position % 3;
   
@@ -66,10 +73,40 @@ export function calculateBlockCoords(faceIndex, position) {
  * @param {number} level - Hierarchical level (1 = atomic cube, 2 = super-cube, etc.)
  * @returns {Object} {x, y, z} cube coordinates
  */
-export function calculateCubeCoords(cubeIndex, level = 1) {
+export function calculateCubeCoords(cubeIndex, level = 1, cubeSequentialIndex = null) {
   if (level === 1) {
-    // First cube is always at origin
-    return { x: 0, y: 0, z: 0 };
+    // For level 1, use sequential index if provided, otherwise derive from cubeIndex
+    let cubeNum = cubeSequentialIndex;
+    if (cubeNum === null || cubeNum === undefined) {
+      // Fallback: use cubeIndex (timestamp string) to derive position
+      cubeNum = typeof cubeIndex === 'string' ? parseInt(cubeIndex.slice(-6)) % 1000 : (cubeIndex || 0);
+    }
+    
+    // Arrange cubes in a 3D grid: 3x3x3 = 27 cubes per "supercube"
+    // Each cube contains 27 blocks (3x3x3), so cubes are spaced 3 units apart
+    // First cube (index 0) is at origin (0, 0, 0)
+    // Cubes form a 3D grid: 3 cubes per dimension
+    const cubesPerDimension = 3;
+    const cubesPerFace = cubesPerDimension * cubesPerDimension; // 9 cubes per face
+    
+    // Calculate which "face" (z-layer) this cube belongs to
+    const faceNum = Math.floor(cubeNum / cubesPerFace);
+    // Calculate position within the face (0-8)
+    const posInFace = cubeNum % cubesPerFace;
+    // Calculate row and column within the face
+    const row = Math.floor(posInFace / cubesPerDimension);
+    const col = posInFace % cubesPerDimension;
+    
+    // Spacing: each cube is 3 units (cube size) apart
+    // Center cubes at origin: cube 0 at (0, 0, 0), cube 1 at (-3, 3, 0), etc.
+    const spacing = 3;
+    const offset = (cubesPerDimension - 1) / 2; // 1, to center at origin
+    
+    return {
+      x: (col - offset) * spacing,
+      y: (offset - row) * spacing, // Invert y for standard coordinate system
+      z: (faceNum - offset) * spacing
+    };
   }
   
   // For higher levels, calculate position within parent cube
@@ -105,13 +142,13 @@ export function calculateCubeCoords(cubeIndex, level = 1) {
  * @returns {Object} {x, y, z} absolute coordinates
  */
 export function calculateAbsoluteCoords(blockLocation) {
-  const { faceIndex, position, cubeIndex = 0, level = 1 } = blockLocation;
+  const { faceIndex, position, cubeIndex = 0, cubeSequentialIndex = null, level = 1 } = blockLocation;
   
-  // Block coordinates within cube
+  // Block coordinates within cube (positionToLocalCoords handles invalid positions)
   const blockCoords = calculateBlockCoords(faceIndex, position);
   
-  // Cube coordinates in hierarchy
-  const cubeCoords = calculateCubeCoords(cubeIndex, level);
+  // Cube coordinates in hierarchy - use sequential index if available
+  const cubeCoords = calculateCubeCoords(cubeIndex, level, cubeSequentialIndex);
   
   // Combine: absolute = cube + block (scaled)
   // Block coordinates are relative to cube center, so add them
@@ -189,6 +226,7 @@ export function calculateFractalAddress(blockLocation) {
 export function getOrigin() {
   return { x: 0, y: 0, z: 0 };
 }
+
 
 
 

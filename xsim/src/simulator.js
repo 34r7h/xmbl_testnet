@@ -301,12 +301,19 @@ export class SystemSimulator extends EventEmitter {
         setTimeout(async () => {
           if (this.modules.xpc) {
             try {
-              await this.modules.xpc.finalizeTransaction(data.txId);
+              // Use validatedHash (txId) to finalize
+              const result = await this.modules.xpc.finalizeTransaction(data.txId);
+              if (result) {
+                console.log(`[XSIM] Auto-finalized transaction: ${data.txId}`);
+              } else {
+                console.warn(`[XSIM] Failed to finalize transaction: ${data.txId}`);
+              }
             } catch (error) {
+              console.error('[XSIM] Finalization error:', error);
               this.logger.error('consensus', 'finalization_failed', error);
             }
           }
-        }, 200); // Small delay before finalization
+        }, 100); // Small delay before finalization
       });
 
       this.logger.system('module_connected', { module: 'xpc', status: 'connected' });
@@ -602,6 +609,39 @@ export class SystemSimulator extends EventEmitter {
     });
 
     this.emit('compute:operation', operation);
+    
+    // Compute operations can trigger state changes via xvsm
+    if (this.modules.xvsm && chance.bool({ likelihood: 70 })) {
+      // 70% chance compute operation triggers state change
+      setTimeout(async () => {
+        try {
+          // Simulate WASM execution that modifies state
+          const txId = `compute_${operation.functionName}_${Date.now()}`;
+          const wasmCode = `// Simulated WASM for ${operation.functionName}`;
+          const shardKey = `compute_${operation.functionName}`;
+          const input = { operation: operation.functionName, duration: operation.duration, memory: operation.memory };
+          
+          // Execute transaction in state machine
+          const result = await this.modules.xvsm.executeTransaction(txId, wasmCode, input, shardKey);
+          
+          // Emit state diff event
+          if (result && result.diff && result.diff.changes) {
+            this.emit('state:diff:created', {
+              txId: result.txId,
+              changes: result.diff.changes,
+              triggeredBy: 'compute',
+              computeOp: operation.functionName
+            });
+          }
+        } catch (err) {
+          // If executeTransaction fails, create a simple state diff
+          this.createStateDiff().catch(e => {
+            this.logger.error('stateMachine', 'compute_triggered_state_error', e);
+          });
+        }
+      }, Math.max(50, operation.duration));
+    }
+    
     return operation;
   }
 
@@ -657,20 +697,27 @@ export class SystemSimulator extends EventEmitter {
     }, 1000 / this.options.stateDiffRate);
     this.intervals.push(stateDiffInterval);
 
-    // Start storage operations
+    // Start storage operations (varied rate with randomness)
     const storageInterval = setInterval(() => {
-      this.simulateStorageOperation().catch(err => {
-        this.logger.error('storage', 'operation_error', err);
-      });
+      const delay = (1000 / this.options.storageOpRate) * (0.7 + Math.random() * 0.6); // ±30% variation
+      setTimeout(() => {
+        this.simulateStorageOperation().catch(err => {
+          this.logger.error('storage', 'operation_error', err);
+        });
+      }, delay);
     }, 1000 / this.options.storageOpRate);
     this.intervals.push(storageInterval);
 
-    // Start compute operations
+    // Start compute operations (varied rate with randomness, slightly different base rate)
+    const computeBaseRate = this.options.computeOpRate * (0.8 + Math.random() * 0.4); // Vary base rate
     const computeInterval = setInterval(() => {
-      this.simulateComputeOperation().catch(err => {
-        this.logger.error('compute', 'operation_error', err);
-      });
-    }, 1000 / this.options.computeOpRate);
+      const delay = (1000 / computeBaseRate) * (0.7 + Math.random() * 0.6); // ±30% variation
+      setTimeout(() => {
+        this.simulateComputeOperation().catch(err => {
+          this.logger.error('compute', 'operation_error', err);
+        });
+      }, delay);
+    }, 1000 / computeBaseRate);
     this.intervals.push(computeInterval);
 
     // Periodic state assembly (simulate app-centric state assembly)

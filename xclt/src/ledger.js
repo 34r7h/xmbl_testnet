@@ -126,26 +126,96 @@ export class Ledger extends EventEmitter {
       await this._gossipFace(face);
     }
     
-    // Add block to face - when face has 9 blocks, they're automatically sorted by hash
-    face.addBlock(block);
+    // Calculate position BEFORE adding block (since addBlock might finalize the face)
+    const level = 1;
+    const tempPosition = face.pendingBlocks.length; // Position will be this index (0-8)
     
-    // If face now has 9 blocks, it's been sorted - finalize it
-    if (face.pendingBlocks.length === 9) {
-      await this._finalizeFace(face);
+    // Assign temporary face index based on which cube this face will belong to
+    // Find the target cube (or create one) to determine face index
+    let tempFaceIndex = 0;
+    let targetCubeForIndex = null;
+    
+    if (face.index === undefined || face.index === 0) {
+      // Find existing cube with space, or determine we'll create a new one
+      const candidateCubes = Array.from(this.cubes.entries())
+        .filter(([_, cube]) => cube.faces.size < 3)
+        .map(([key, cube]) => ({ key, cube, avgTs: cube.getAverageTimestamp() }))
+        .sort((a, b) => {
+          const aTs = typeof a.avgTs === 'bigint' ? a.avgTs : BigInt(Math.floor(Number(a.avgTs) * 1000000));
+          const bTs = typeof b.avgTs === 'bigint' ? b.avgTs : BigInt(Math.floor(Number(b.avgTs) * 1000000));
+          return aTs < bTs ? -1 : aTs > bTs ? 1 : 0;
+        });
+      
+      if (candidateCubes.length > 0) {
+        // Face will go to existing cube - use cube's current face count as temp index
+        targetCubeForIndex = candidateCubes[0].cube;
+        tempFaceIndex = targetCubeForIndex.faces.size; // 0, 1, or 2
+      } else {
+        // Face will create a new cube - start at index 0
+        tempFaceIndex = 0;
+      }
+    } else {
+      tempFaceIndex = face.index;
     }
     
-    // Set block location - position determined after sorting
-    const level = 1;
-    const position = face.blocks.size === 9 ? Array.from(face.blocks.entries()).find(([_, b]) => b.id === block.id)?.[0] : null;
-    const faceIndex = face.index || 0;
-    const finalCubeIndex = await this._getCubeIndexForFace(0);
-    block.setLocation({ faceIndex, position: position !== null ? position : -1, cubeIndex: finalCubeIndex, level });
+    // Get cube index - use the target cube's key if we found one, otherwise get a new one
+    let finalCubeIndex = null;
+    if (targetCubeForIndex) {
+      // Find the cube key
+      for (const [key, cube] of this.cubes.entries()) {
+        if (cube === targetCubeForIndex) {
+          finalCubeIndex = key;
+          break;
+        }
+      }
+    }
+    if (!finalCubeIndex) {
+      finalCubeIndex = await this._getCubeIndexForFace(0);
+    }
     
-    // Emit block added event with coordinates
-    this.emit('block:added', block);
+    // Get cube sequential index for coordinate calculation
+    let cubeSequentialIndex = null;
+    if (targetCubeForIndex && targetCubeForIndex.index !== undefined) {
+      cubeSequentialIndex = targetCubeForIndex.index;
+    } else if (finalCubeIndex) {
+      // Look up cube to get its sequential index
+      const cube = this.cubes.get(finalCubeIndex);
+      if (cube && cube.index !== undefined) {
+        cubeSequentialIndex = cube.index;
+      }
+    }
+    
+    // Set block location IMMEDIATELY with temporary position and face index
+    // This ensures coordinates are calculated right away with distinct z-values
+    block.setLocation({ 
+      faceIndex: tempFaceIndex, 
+      position: tempPosition, // Temporary position (0-8), will be updated after sorting
+      cubeIndex: finalCubeIndex, 
+      cubeSequentialIndex: cubeSequentialIndex, // Store sequential index for coordinate calculation
+      level 
+    });
+    
+    // Add block to face - when face has 9 blocks, they're automatically sorted by hash
+    const pendingCountBefore = face.pendingBlocks.length;
+    face.addBlock(block);
+    
+    // If face was just finalized (had 8 blocks, now has 9), sort and finalize it
+    // After addBlock, if pendingBlocks is empty and blocks.size is 9, face was finalized
+    if (pendingCountBefore === 8 && face.pendingBlocks.length === 0 && face.blocks.size === 9) {
+      await this._finalizeFace(face);
+      // After finalization, position will be updated to final sorted position
+    }
+    
+    // Emit block added event with coordinates (now valid because position is set)
+    // Only emit if coordinates are valid
     const coords = block.getCoordinates();
-    const vector = block.getVector();
-    console.log(`Block added: ${block.id} at face ${faceIndex}, position ${position}, coords: (${coords.x}, ${coords.y}, ${coords.z}), vector: ${vector.magnitude.toFixed(2)}`);
+    if (coords && coords.x !== null && coords.y !== null && coords.z !== null && tempPosition >= 0) {
+      this.emit('block:added', block);
+      const vector = block.getVector();
+      console.log(`Block added: ${block.id} at face ${tempFaceIndex}, position ${tempPosition}, coords: (${coords.x}, ${coords.y}, ${coords.z}), vector: ${vector.magnitude.toFixed(2)}`);
+    } else {
+      console.warn(`Block ${block.id} has invalid coordinates or position: coords=${JSON.stringify(coords)}, position=${tempPosition}`);
+    }
     
     // Persist block with coordinates
     if (this._dbOpen) {
@@ -212,6 +282,37 @@ export class Ledger extends EventEmitter {
     // Store face timestamp key for cleanup
     const faceTimestampKey = face.timestamp.toString();
     
+    // If face.blocks already has 9 blocks (sorted by addBlock), use those
+    // Otherwise, sort pendingBlocks and assign positions
+    let sortedBlocks;
+    if (face.blocks.size === 9 && face._sorted) {
+      // Face was already sorted by addBlock, just get blocks in order
+      sortedBlocks = Array.from({ length: 9 }, (_, i) => face.blocks.get(i));
+    } else {
+      // Sort blocks by hash and assign final positions (0-8)
+      sortedBlocks = Array.from(face.pendingBlocks).sort((a, b) => {
+        return a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0;
+      });
+      
+      // Clear and rebuild face.blocks with sorted positions
+      face.blocks.clear();
+      for (let i = 0; i < sortedBlocks.length; i++) {
+        const block = sortedBlocks[i];
+        face.blocks.set(i, block); // Position 0-8
+      }
+      face._sorted = true;
+      face.pendingBlocks = []; // Clear pending blocks
+    }
+    
+    // Update all block locations with final sorted positions
+    for (let i = 0; i < sortedBlocks.length; i++) {
+      const block = sortedBlocks[i];
+      if (block && block.location) {
+        block.location.position = i;
+        block.updateCoordinates(); // Recalculate coordinates with final position
+      }
+    }
+    
     // Get validator average timestamp for this face (from xpc validation)
     // This determines placement - earliest timestamp gets priority
     const faceAvgTimestamp = face.getAverageTimestamp();
@@ -241,6 +342,8 @@ export class Ledger extends EventEmitter {
       const cubeTimestamp = process.hrtime.bigint();
       targetCube = new Cube(cubeTimestamp);
       cubeTimestampKey = cubeTimestamp.toString();
+      // Assign sequential cube index for coordinate calculation
+      targetCube.index = this.cubes.size; // Sequential index for positioning
       this.cubes.set(cubeTimestampKey, targetCube);
       
       // Gossip cube creation with timestamp so all validators see deterministic placement
@@ -252,6 +355,18 @@ export class Ledger extends EventEmitter {
     
     // Update cube's validator average timestamp
     targetCube.validatorAverageTimestamp = targetCube.getAverageTimestamp();
+    
+    // Update all block locations with final cubeIndex and cube sequential index
+    // Note: face.index is still 0 (temporary) until cube is finalized
+    // Blocks will get final faceIndex when cube is finalized in _finalizeCube
+    for (const [position, block] of face.blocks.entries()) {
+      if (block.location) {
+        block.location.cubeIndex = cubeTimestampKey;
+        block.location.cubeSequentialIndex = targetCube.index; // Store sequential index for coordinate calculation
+        // Keep temporary faceIndex for now - will be updated in _finalizeCube
+        block.updateCoordinates(); // Recalculate with final cubeIndex
+      }
+    }
     
     // Clean up pending face (use timestamp key)
     this.pendingFaces.delete(faceTimestampKey);
@@ -284,17 +399,18 @@ export class Ledger extends EventEmitter {
       cube.faces.set(face.timestamp.toString(), face);
     }
     
-    // Update block locations with correct face indices and positions
-    for (const face of cube.faces.values()) {
-      for (const [position, block] of face.blocks.entries()) {
-        if (block.location) {
-          block.location.faceIndex = face.index;
-          block.location.position = position;
-          block.location.cubeIndex = cubeTimestampKey;
-          block.updateCoordinates();
+      // Update block locations with correct face indices and positions
+      for (const face of cube.faces.values()) {
+        for (const [position, block] of face.blocks.entries()) {
+          if (block.location) {
+            block.location.faceIndex = face.index;
+            block.location.position = position;
+            block.location.cubeIndex = cubeTimestampKey;
+            block.location.cubeSequentialIndex = cube.index; // Update sequential index
+            block.updateCoordinates();
+          }
         }
       }
-    }
     
     // Mark cube as Level 1 (atomic cube)
     cube.level = 1;
