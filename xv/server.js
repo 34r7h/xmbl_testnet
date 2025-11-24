@@ -44,12 +44,23 @@ function serializeBigInt(obj) {
 // Initialize simulator and ledger
 async function initialize() {
   try {
-    // Clear database on startup for fresh simulation
-    const dbPath = path.join(__dirname, '..', 'xclt', 'data', 'ledger');
-    if (fs.existsSync(dbPath)) {
-      console.log('[SERVER] Clearing ledger database for fresh start...');
-      fs.rmSync(dbPath, { recursive: true, force: true });
-    }
+    // Clear ALL databases on startup for fresh simulation
+    // The simulator uses ./data/xsim/ledger (relative to project root)
+    const projectRoot = path.join(__dirname, '..');
+    const xsimDbPath = path.join(projectRoot, 'data', 'xsim', 'ledger');
+    const xcltDbPath = path.join(projectRoot, 'xclt', 'data', 'ledger');
+    const xvsmDbPath = path.join(projectRoot, 'data', 'xsim', 'xvsm');
+    const xpcDbPath = path.join(projectRoot, 'data', 'xsim', 'xpc');
+    
+    // Clear all database paths
+    [xsimDbPath, xcltDbPath, xvsmDbPath, xpcDbPath].forEach(dbPath => {
+      if (fs.existsSync(dbPath)) {
+        console.log(`[SERVER] Clearing database: ${dbPath}`);
+        fs.rmSync(dbPath, { recursive: true, force: true });
+      }
+    });
+    
+    console.log('[SERVER] All databases cleared for fresh start');
     
     // Initialize simulator first
     simulator = new SystemSimulator({
@@ -63,6 +74,17 @@ async function initialize() {
 
     // Start simulator to initialize modules
     await simulator.start();
+    console.log('[SERVER] Simulator started, running:', simulator.running);
+    console.log('[SERVER] Transaction rate:', simulator.options.transactionRate, 'tx/s');
+    
+    // Verify simulator is creating transactions
+    setTimeout(() => {
+      if (simulator && simulator.running) {
+        console.log('[SERVER] Simulator status check - running:', simulator.running);
+        console.log('[SERVER] Transactions created so far:', simulator.metrics.transactionsCreated);
+        console.log('[SERVER] Blocks added so far:', simulator.metrics.blocksAdded);
+      }
+    }, 5000); // Check after 5 seconds
     
     // Get ledger from simulator after it's initialized
     ledger = simulator.modules.xclt;
@@ -84,12 +106,15 @@ async function initialize() {
       }
       
       console.log('[SERVER] Block added:', block.id, 'coords:', coords, 'location:', block.location);
+      const tx = block.tx || {};
       const blockData = {
         id: block.id,
         txId: block.txId,
         coordinates: coords,
         vector: vector,
         location: block.location,
+        from: tx.from || null,
+        to: tx.to || null,
         timestamp: typeof block.timestamp === 'bigint' ? block.timestamp.toString() : block.timestamp
       };
       io.emit('xclt:block:added', serializeBigInt(blockData));
@@ -123,33 +148,20 @@ async function initialize() {
           }
           const finalCoords = block.getCoordinates();
           const finalVector = block.getVector();
+          const tx = block.tx || {};
           const blockData = {
             id: block.id,
             txId: block.txId,
             coordinates: finalCoords,
             vector: finalVector,
             location: block.location,
+            from: tx.from || null,
+            to: tx.to || null,
             timestamp: typeof block.timestamp === 'bigint' ? block.timestamp.toString() : block.timestamp
           };
           io.emit('xclt:block:updated', serializeBigInt(blockData));
         }
       }
-    });
-    
-    ledger.on('cube:complete', async (data) => {
-      const cubeId = data.cubeId || data.id;
-      const level = data.level || 1;
-      
-      console.log(`[SERVER] Cube complete: ${cubeId} (Level ${level})`);
-      
-      // Emit cube complete event
-      io.emit('xclt:cube:complete', {
-        cubeId: cubeId,
-        level: level,
-        faceCount: data.faceCount || 3
-      });
-      
-      // Request all block positions for this cube will be handled by client request
     });
     
     // Handle client requests for face blocks
@@ -165,12 +177,15 @@ async function initialize() {
                 for (const [position, block] of face.blocks.entries()) {
                   const coords = block.getCoordinates();
                   const vector = block.getVector();
+                  const tx = block.tx || {};
                   const blockData = {
                     id: block.id,
                     txId: block.txId,
                     coordinates: coords,
                     vector: vector,
                     location: block.location,
+                    from: tx.from || null,
+                    to: tx.to || null,
                     timestamp: typeof block.timestamp === 'bigint' ? block.timestamp.toString() : block.timestamp
                   };
                   socket.emit('xclt:block:updated', serializeBigInt(blockData));
@@ -196,6 +211,7 @@ async function initialize() {
                 for (const [position, block] of face.blocks.entries()) {
                   const coords = block.getCoordinates();
                   const vector = block.getVector();
+                  const tx = block.tx || {};
                   const blockData = {
                     id: block.id,
                     txId: block.txId,
@@ -207,6 +223,8 @@ async function initialize() {
                       cubeIndex: cubeId,
                       level: level
                     },
+                    from: tx.from || null,
+                    to: tx.to || null,
                     timestamp: typeof block.timestamp === 'bigint' ? block.timestamp.toString() : block.timestamp
                   };
                   socket.emit('xclt:block:updated', serializeBigInt(blockData));
@@ -214,6 +232,98 @@ async function initialize() {
               }
             }
           }
+        }
+      });
+
+      socket.on('restart:simulation', async () => {
+        console.log('[SERVER] Restart requested by client');
+        try {
+          // Remove all event listeners from old modules
+          if (simulator && simulator.modules) {
+            if (simulator.modules.xpc) {
+              simulator.modules.xpc.removeAllListeners();
+            }
+            if (simulator.modules.xclt) {
+              simulator.modules.xclt.removeAllListeners();
+            }
+            if (simulator.modules.xvsm) {
+              simulator.modules.xvsm.removeAllListeners();
+            }
+            if (simulator.modules.xsc) {
+              simulator.modules.xsc.removeAllListeners();
+            }
+            if (simulator.modules.xid) {
+              simulator.modules.xid.removeAllListeners();
+            }
+            if (simulator.modules.xn) {
+              simulator.modules.xn.removeAllListeners();
+            }
+          }
+          
+          // Remove all event listeners from old ledger
+          if (ledger) {
+            ledger.removeAllListeners();
+            console.log('[SERVER] Removed all ledger event listeners');
+          }
+          
+          // Notify all clients to clear their state first
+          io.emit('simulation:clearing', { timestamp: Date.now() });
+          
+          // Remove all event listeners from old simulator
+          if (simulator) {
+            simulator.removeAllListeners();
+            simulator.stop();
+            console.log('[SERVER] Stopped old simulator');
+          }
+          
+          // Clear ALL databases for restart
+          const projectRoot = path.join(__dirname, '..');
+          const xsimDbPath = path.join(projectRoot, 'data', 'xsim', 'ledger');
+          const xcltDbPath = path.join(projectRoot, 'xclt', 'data', 'ledger');
+          const xvsmDbPath = path.join(projectRoot, 'data', 'xsim', 'xvsm');
+          const xpcDbPath = path.join(projectRoot, 'data', 'xsim', 'xpc');
+          
+          [xsimDbPath, xcltDbPath, xvsmDbPath, xpcDbPath].forEach(dbPath => {
+            if (fs.existsSync(dbPath)) {
+              console.log(`[SERVER] Clearing database for restart: ${dbPath}`);
+              fs.rmSync(dbPath, { recursive: true, force: true });
+            }
+          });
+          
+          // Clear references
+          ledger = null;
+          simulator = null;
+          
+          // Wait longer to ensure all intervals are cleared and cleanup completes
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          // Reinitialize
+          await initialize();
+          
+          // Send zero metrics to all clients
+          io.emit('system:metrics', {
+            blocksAdded: 0,
+            facesCompleted: 0,
+            cubesCompleted: 0,
+            transactionsCreated: 0,
+            transactionsValidated: 0,
+            storageOperations: 0,
+            computeOperations: 0
+          });
+          
+          // Send zero XPC metrics
+          io.emit('xpc:metrics', {
+            rawTx: 0,
+            processing: 0,
+            finalized: 0
+          });
+          
+          // Notify all clients
+          io.emit('simulation:restarted', { timestamp: Date.now() });
+          console.log('[SERVER] Simulation restarted from zero');
+        } catch (error) {
+          console.error('[SERVER] Failed to restart simulation:', error);
+          socket.emit('simulation:restart:error', { error: error.message });
         }
       });
     });
@@ -241,12 +351,15 @@ async function initialize() {
             for (const [position, block] of face.blocks.entries()) {
               const coords = block.getCoordinates();
               const vector = block.getVector();
+              const tx = block.tx || {};
               const blockData = {
                 id: block.id,
                 txId: block.txId,
                 coordinates: coords,
                 vector: vector,
                 location: block.location,
+                from: tx.from || null,
+                to: tx.to || null,
                 timestamp: typeof block.timestamp === 'bigint' ? block.timestamp.toString() : block.timestamp
               };
               allBlocks.push(blockData);
@@ -391,7 +504,9 @@ async function initialize() {
 
     // Start simulator
     await simulator.start();
-    console.log('Simulator started');
+    console.log('[SERVER] Simulator started successfully');
+    console.log('[SERVER] Transaction rate:', simulator.options.transactionRate, 'tx/s');
+    console.log('[SERVER] Simulator running:', simulator.running);
 
   } catch (error) {
     console.error('Failed to initialize:', error);
@@ -402,23 +517,25 @@ async function initialize() {
 io.on('connection', async (socket) => {
   console.log('Client connected:', socket.id);
 
-    // Send initial state if available
-  if (simulator) {
-    const metrics = simulator.getMetrics();
-    socket.emit('system:metrics', metrics);
+    // Send initial state - always start with zero metrics for fresh state
+    socket.emit('system:metrics', {
+      blocksAdded: 0,
+      facesCompleted: 0,
+      cubesCompleted: 0,
+      transactionsCreated: 0,
+      transactionsValidated: 0,
+      storageOperations: 0,
+      computeOperations: 0
+    });
     
-    // Send initial XPC metrics
-    if (simulator.modules.xpc) {
-      const stats = simulator.modules.xpc.getMempoolStats();
-      socket.emit('xpc:metrics', {
-        rawTx: stats.raw,
-        processing: stats.processing,
-        finalized: stats.final
-      });
-    }
-  }
+    // Send initial XPC metrics - always zero
+    socket.emit('xpc:metrics', {
+      rawTx: 0,
+      processing: 0,
+      finalized: 0
+    });
 
-  // Send existing blocks from ledger
+  // Send existing blocks from ledger so client can render them
   if (ledger && ledger.blocks) {
     console.log(`[SERVER] Sending ${ledger.blocks.size} existing blocks to client`);
     let sentCount = 0;
@@ -426,31 +543,33 @@ io.on('connection', async (socket) => {
       const coords = block.getCoordinates();
       
       // Skip blocks with invalid coordinates or positions
-      if (!coords || coords.x === null || coords.y === null || coords.z === null) {
-        console.warn('[SERVER] Block missing or invalid coordinates:', block.id, coords);
+      if (!coords || coords.x === null || coords.x === undefined || coords.y === null || coords.y === undefined || coords.z === null || coords.z === undefined) {
         continue;
       }
       
-      // Skip blocks with invalid position
       const blockPosition = block.location?.position;
       if (!block.location || blockPosition === undefined || blockPosition === null || Number(blockPosition) < 0) {
-        console.warn('[SERVER] Block missing or invalid position:', block.id, block.location, `position=${blockPosition}`);
         continue;
       }
       
       const vector = block.getVector();
+      const tx = block.tx || {};
       const blockData = {
         id: block.id,
         txId: block.txId,
         coordinates: coords,
         vector: vector,
         location: block.location,
+        from: tx.from || null,
+        to: tx.to || null,
         timestamp: typeof block.timestamp === 'bigint' ? block.timestamp.toString() : block.timestamp
       };
       socket.emit('xclt:block:added', serializeBigInt(blockData));
       sentCount++;
     }
     console.log(`[SERVER] Sent ${sentCount} valid blocks to client (skipped ${ledger.blocks.size - sentCount} invalid)`);
+  } else {
+    console.log('[SERVER] No existing blocks to send (ledger not initialized or empty)');
   }
 
   socket.on('request:face:blocks', async (data) => {

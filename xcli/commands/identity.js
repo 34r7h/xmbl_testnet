@@ -23,7 +23,7 @@ export function createIdentityCommand(xid) {
         console.log(JSON.stringify({
           name,
           address: identity.address,
-          publicKey: identity.publicKey.substring(0, 64) + '...'
+          publicKey: identity.publicKey
         }));
       } catch (error) {
         console.error('Error creating identity:', error.message);
@@ -67,7 +67,7 @@ export function createIdentityCommand(xid) {
         console.log(JSON.stringify({
           name,
           address: identity.address,
-          publicKey: identity.publicKey.substring(0, 64) + '...'
+          publicKey: identity.publicKey
         }));
       } catch (error) {
         console.error('Error loading identity:', error.message);

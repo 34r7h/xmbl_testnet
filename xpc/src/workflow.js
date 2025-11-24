@@ -29,12 +29,18 @@ export class ConsensusWorkflow extends EventEmitter {
     
     // Listen for finalized transactions and add to ledger
     this.on('tx:finalized', async (data) => {
+      console.log('[XPC] tx:finalized listener triggered, xclt:', !!this.xclt, 'txData:', !!data.txData);
       if (this.xclt) {
         try {
-          await this.xclt.addTransaction(data.txData);
+          console.log('[XPC] Adding transaction to ledger:', data.txId || data.txData?.id);
+          const result = await this.xclt.addTransaction(data.txData);
+          console.log('[XPC] Transaction added to ledger successfully, blockId:', result?.blockId);
         } catch (error) {
-          console.error('Failed to add finalized transaction to ledger:', error);
+          console.error('[XPC] Failed to add finalized transaction to ledger:', error);
+          console.error('[XPC] Error stack:', error.stack);
         }
+      } else {
+        console.warn('[XPC] xclt is not available, cannot add transaction to ledger');
       }
     });
   }

@@ -4,6 +4,10 @@
       <div class="sidebar">
         <h2>XMBL Dashboard</h2>
         
+        <div class="controls-section">
+          <button @click="restartSimulation" class="restart-btn">Restart Simulation</button>
+        </div>
+        
         <div class="metrics-section">
           <h3>System Metrics</h3>
           <div class="metric">
@@ -121,7 +125,10 @@ export default {
     let scene, camera, renderer, controls;
     let blockMeshes = new Map();
     let cubeOutlines = new Map();
+    let identityNodes = new Map(); // Map of identity address -> THREE.Mesh
+    let connectionLines = new Map(); // Map of connection key -> THREE.Line
     let socket;
+    const identities = ref(new Map()); // Track identities
 
     function initThree() {
       scene = new THREE.Scene();
@@ -133,7 +140,7 @@ export default {
         0.1,
         1000
       );
-      camera.position.set(5, 5, 5);
+      camera.position.set(10, 10, 10);
       camera.lookAt(0, 0, 0);
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -154,13 +161,18 @@ export default {
       directionalLight.castShadow = true;
       scene.add(directionalLight);
 
-      // Add grid helper (smaller, centered)
-      const gridHelper = new THREE.GridHelper(20, 20, 0x333333, 0x222222);
+      // Add grid helper (larger to see blocks better)
+      const gridHelper = new THREE.GridHelper(50, 50, 0x333333, 0x222222);
       scene.add(gridHelper);
 
       // Add axes helper
       const axesHelper = new THREE.AxesHelper(5);
       scene.add(axesHelper);
+
+      // Create node graph group
+      const nodeGraphGroup = new THREE.Group();
+      nodeGraphGroup.name = 'nodeGraph';
+      scene.add(nodeGraphGroup);
 
       animate();
     }
@@ -187,8 +199,8 @@ export default {
         return;
       }
 
-      // Scale factor for block size
-      const blockSize = 0.8;
+      // Scale factor for block size - make blocks more visible
+      const blockSize = 1.0;
       const spacing = 1.0;
 
       // Calculate position from coordinates
@@ -203,12 +215,17 @@ export default {
         if (existingMesh.position.x !== x || existingMesh.position.y !== y || existingMesh.position.z !== z) {
           existingMesh.position.set(x, y, z);
           existingMesh.userData.location = location;
+          existingMesh.userData.from = blockData.from;
+          existingMesh.userData.to = blockData.to;
           // Update color if face index changed
           const material = existingMesh.material;
           const newColor = getBlockColor(location);
           material.color.setHex(newColor);
           material.emissive.setHex(newColor);
           console.log(`Updated block ${id} position to (${x}, ${y}, ${z})`);
+          
+          // Update node graph connections
+          updateNodeGraph(blockData);
         }
         return;
       }
@@ -229,12 +246,15 @@ export default {
       mesh.position.set(x, y, z);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
-      mesh.userData = { blockId: id, location };
+      mesh.userData = { blockId: id, location, from: blockData.from, to: blockData.to };
 
       scene.add(mesh);
       blockMeshes.set(id, mesh);
 
       console.log(`Block ${id} added to scene. Total blocks: ${blockMeshes.size}`);
+
+      // Update node graph connections
+      updateNodeGraph(blockData);
 
       // Add cube outline if face is complete
       updateCubeOutline(location);
@@ -295,6 +315,111 @@ export default {
         scene.add(line);
         cubeOutlines.set(cubeKey, line);
         console.log(`Cube outline added for ${cubeKey} with ${cubeBlocks.length} blocks`);
+      }
+    }
+
+    function updateNodeGraph(blockData) {
+      const { from, to, id, coordinates } = blockData;
+      if (!from || !to || !coordinates) return;
+
+      const nodeGraphGroup = scene.getObjectByName('nodeGraph');
+      if (!nodeGraphGroup) return;
+
+      // Create or update identity nodes
+      const nodeOffset = 15; // Offset node graph to the side
+      const nodeSpacing = 3;
+
+      [from, to].forEach((address) => {
+        if (!identityNodes.has(address)) {
+          // Create identity node (sphere)
+          const nodeGeometry = new THREE.SphereGeometry(0.3, 16, 16);
+          const nodeMaterial = new THREE.MeshStandardMaterial({
+            color: 0x00ff88,
+            emissive: 0x00ff88,
+            emissiveIntensity: 0.5
+          });
+          const nodeMesh = new THREE.Mesh(nodeGeometry, nodeMaterial);
+          
+          // Position nodes in a vertical line on the right side
+          const nodeIndex = identityNodes.size;
+          const totalNodes = identityNodes.size + 1;
+          nodeMesh.position.set(
+            nodeOffset,
+            (nodeIndex - (totalNodes - 1) / 2) * nodeSpacing,
+            0
+          );
+          
+          nodeMesh.userData = { address, type: 'identity' };
+          nodeGraphGroup.add(nodeMesh);
+          identityNodes.set(address, nodeMesh);
+          identities.value.set(address, { address, txCount: 0 });
+        }
+        
+        // Update transaction count
+        const identity = identities.value.get(address);
+        if (identity) {
+          identity.txCount++;
+        }
+      });
+
+      // Create connection line from identity node to block
+      const fromNode = identityNodes.get(from);
+      const toNode = identityNodes.get(to);
+      const blockMesh = blockMeshes.get(id);
+
+      if (fromNode && blockMesh) {
+        const connectionKey = `${from}-${id}`;
+        if (!connectionLines.has(connectionKey)) {
+          const points = [
+            new THREE.Vector3(fromNode.position.x, fromNode.position.y, fromNode.position.z),
+            new THREE.Vector3(blockMesh.position.x, blockMesh.position.y, blockMesh.position.z)
+          ];
+          const geometry = new THREE.BufferGeometry().setFromPoints(points);
+          const material = new THREE.LineBasicMaterial({
+            color: 0x00ff88,
+            opacity: 0.3,
+            transparent: true
+          });
+          const line = new THREE.Line(geometry, material);
+          connectionLines.set(connectionKey, line);
+          nodeGraphGroup.add(line);
+        }
+      }
+
+      if (toNode && blockMesh) {
+        const connectionKey = `${to}-${id}`;
+        if (!connectionLines.has(connectionKey)) {
+          const points = [
+            new THREE.Vector3(toNode.position.x, toNode.position.y, toNode.position.z),
+            new THREE.Vector3(blockMesh.position.x, blockMesh.position.y, blockMesh.position.z)
+          ];
+          const geometry = new THREE.BufferGeometry().setFromPoints(points);
+          const material = new THREE.LineBasicMaterial({
+            color: 0x0088ff,
+            opacity: 0.3,
+            transparent: true
+          });
+          const line = new THREE.Line(geometry, material);
+          connectionLines.set(connectionKey, line);
+          nodeGraphGroup.add(line);
+        }
+      }
+
+      // Update existing connection lines when block position changes
+      if (blockMesh) {
+        connectionLines.forEach((line, key) => {
+          if (key.includes(id)) {
+            const [address] = key.split('-');
+            const node = identityNodes.get(address);
+            if (node) {
+              const points = [
+                new THREE.Vector3(node.position.x, node.position.y, node.position.z),
+                new THREE.Vector3(blockMesh.position.x, blockMesh.position.y, blockMesh.position.z)
+              ];
+              line.geometry.setFromPoints(points);
+            }
+          }
+        });
       }
     }
 
@@ -382,6 +507,49 @@ export default {
       logStream.value = [];
     }
 
+    function clearLocalState() {
+      // Clear all 3D objects
+      blockMeshes.forEach(mesh => scene.remove(mesh));
+      blockMeshes.clear();
+      cubeOutlines.forEach(outline => scene.remove(outline));
+      cubeOutlines.clear();
+      identityNodes.forEach(node => {
+        const nodeGraphGroup = scene.getObjectByName('nodeGraph');
+        if (nodeGraphGroup) nodeGraphGroup.remove(node);
+      });
+      identityNodes.clear();
+      connectionLines.forEach(line => {
+        const nodeGraphGroup = scene.getObjectByName('nodeGraph');
+        if (nodeGraphGroup) nodeGraphGroup.remove(line);
+      });
+      connectionLines.clear();
+      identities.value.clear();
+      
+      // Reset all metrics to zero
+      metrics.value = {
+        blocksAdded: 0,
+        facesCompleted: 0,
+        cubesCompleted: 0,
+        transactionsCreated: 0,
+        transactionsValidated: 0,
+        storageOperations: 0,
+        computeOperations: 0
+      };
+      recentActivity.value = [];
+      xscOperations.value = [];
+      mempoolStats.value = { rawTx: 0, processing: 0, finalized: 0 };
+      logStream.value = [];
+    }
+
+    function restartSimulation() {
+      if (socket && socket.connected) {
+        socket.emit('restart:simulation');
+        addLog('system', 'Restarting simulation...', {});
+        // Clear local state immediately
+        clearLocalState();
+      }
+    }
+
     function formatTime(timestamp) {
       return new Date(timestamp).toLocaleTimeString();
     }
@@ -395,6 +563,21 @@ export default {
 
       socket.on('connect', () => {
         console.log('Connected to bridge server');
+        // Don't clear state on connect - server will send existing blocks
+        // Only reset metrics, not the visual state
+        metrics.value = {
+          blocksAdded: 0,
+          facesCompleted: 0,
+          cubesCompleted: 0,
+          transactionsCreated: 0,
+          transactionsValidated: 0,
+          stateDiffsCreated: 0,
+          stateAssemblies: 0,
+          storageOperations: 0,
+          computeOperations: 0,
+          uptime: 0
+        };
+        mempoolStats.value = { rawTx: 0, processing: 0, finalized: 0 };
         addLog('system', 'Connected to bridge server', { status: 'connected' });
         addActivity('system', 'Connected to bridge server');
       });
@@ -450,8 +633,12 @@ export default {
       });
 
       socket.on('xid:identity:created', (data) => {
-        addLog('identity', `New identity created: ${data.address.substring(0, 12)}...`, data);
-        addActivity('xid', `Identity ${data.address.substring(0, 8)} created`);
+        const address = data.address;
+        if (!identities.value.has(address)) {
+          identities.value.set(address, { address, txCount: 0 });
+        }
+        addLog('identity', `New identity created: ${address.substring(0, 12)}...`, data);
+        addActivity('xid', `Identity ${address.substring(0, 8)} created`);
       });
 
       socket.on('xpc:transaction:new', (data) => {
@@ -541,6 +728,22 @@ export default {
           finalized: data.finalized || 0
         };
       });
+
+      socket.on('simulation:clearing', (data) => {
+        // Clear all state when server signals clearing
+        clearLocalState();
+        addLog('system', 'Simulation clearing...', data);
+      });
+
+      socket.on('simulation:restarted', (data) => {
+        addLog('system', 'Simulation restarted from zero', data);
+        addActivity('system', 'Simulation restarted');
+      });
+
+      socket.on('simulation:restart:error', (data) => {
+        addLog('system', `Restart error: ${data.error}`, data);
+        addActivity('system', 'Restart failed');
+      });
     }
 
     function handleResize() {
@@ -574,7 +777,8 @@ export default {
       logStream,
       logContainer,
       formatTime,
-      clearLogs
+      clearLogs,
+      restartSimulation
     };
   }
 };
@@ -878,5 +1082,34 @@ export default {
 
 .log-content::-webkit-scrollbar-thumb:hover {
   background: #444;
+}
+
+.controls-section {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 1px solid #333;
+}
+
+.restart-btn {
+  width: 100%;
+  padding: 12px;
+  background: #ff4444;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: background 0.2s;
+}
+
+.restart-btn:hover {
+  background: #ff6666;
+}
+
+.restart-btn:active {
+  background: #cc0000;
 }
 </style>
