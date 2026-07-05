@@ -51,7 +51,7 @@ class XMBLCore {
     const { XNNode } = await import('xn');
     const { Ledger } = await import('xclt');
     const { StateMachine } = await import('xvsm');
-    const { ConsensusWorkflow, ConsensusGossip } = await import('xpc');
+    const { ConsensusWorkflow } = await import('xpc');
     const { StorageNode, MarketPricing } = await import('xsc');
     
     // Initialize network first
@@ -80,11 +80,11 @@ class XMBLCore {
       xn: this.xn
     });
     
-    // Initialize gossip with network
-    this.gossip = new ConsensusGossip({
-      xn: this.xn
-    });
-    
+    // Gossip is constructed in init(), after xn.start() — its constructor
+    // only subscribes to its topic if xn.started is already true, and xn is
+    // never started yet at this point.
+    this.gossip = null;
+
     // Initialize storage and compute
     this.pricing = new MarketPricing();
     this.xsc = new StorageNode({
@@ -103,7 +103,14 @@ class XMBLCore {
     
     // Start network
     await this.xn.start();
-    
+
+    // Now that xn is started, construct gossip so its constructor's
+    // subscribe-if-started check actually subscribes to the topic.
+    const { ConsensusGossip } = await import('xpc');
+    this.gossip = new ConsensusGossip({
+      xn: this.xn
+    });
+
     // Create default identity if needed
     const { Identity } = await import('xid');
     if (!this.xid) {

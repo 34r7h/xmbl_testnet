@@ -2,7 +2,7 @@ import { createLibp2p } from 'libp2p';
 import { tcp } from '@libp2p/tcp';
 import { webSockets } from '@libp2p/websockets';
 import { kadDHT } from '@libp2p/kad-dht';
-import { gossipsub } from '@chainsafe/libp2p-gossipsub';
+import { floodsub } from '@libp2p/floodsub';
 import { noise } from '@chainsafe/libp2p-noise';
 import { yamux } from '@chainsafe/libp2p-yamux';
 import { mdns } from '@libp2p/mdns';
@@ -43,7 +43,7 @@ export class XNNode extends EventEmitter {
       peerDiscovery: [mdns()],
       services: {
         identify: identify(),
-        pubsub: gossipsub()
+        pubsub: floodsub()
       }
     });
 
