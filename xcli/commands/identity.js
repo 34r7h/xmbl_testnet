@@ -91,8 +91,8 @@ export function createIdentityCommand(xid) {
         const keyManager = new xid.KeyManager(options.keyDir);
         const identity = await keyManager.loadIdentity(name, options.password);
         const messageBytes = new TextEncoder().encode(options.message);
-        const mayo = await xid.MAYOWasm.load();
-        const signature = await mayo.sign(messageBytes, identity.privateKey);
+        // Route through the ONE signer seam, not the primitive directly.
+        const signature = await xid.Signer.sign(messageBytes, identity.privateKey);
         console.log(JSON.stringify({ message: options.message, signature }));
       } catch (error) {
         console.error('Error signing message:', error.message);
@@ -107,15 +107,15 @@ export function createIdentityCommand(xid) {
     .requiredOption('--signature <sig>', 'Signature')
     .requiredOption('--public-key <key>', 'Public key')
     .action(async (options) => {
-      if (!xid || !xid.MAYOWasm) {
+      if (!xid || !xid.Signer) {
         console.error('Error: XID module not available');
         process.exit(1);
       }
 
       try {
-        const mayo = await xid.MAYOWasm.load();
         const messageBytes = new TextEncoder().encode(options.message);
-        const isValid = await mayo.verify(messageBytes, options.signature, options.publicKey);
+        // Route through the ONE signer seam, not the primitive directly.
+        const isValid = await xid.Signer.verify(messageBytes, options.signature, options.publicKey);
         console.log(JSON.stringify({ valid: isValid }));
       } catch (error) {
         console.error('Error verifying signature:', error.message);

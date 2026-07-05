@@ -1,4 +1,5 @@
 import { MAYOWasm } from './wasm-wrapper.js';
+import { sign as signerSign, verify as signerVerify } from './signer.js';
 import { createHash } from 'crypto';
 
 /**
@@ -99,14 +100,15 @@ export class Identity {
    * @returns {Promise<Object>} Transaction with signature added (NO publicKey field)
    */
   async signTransaction(tx) {
-    const mayo = await MAYOWasm.load();
     // Ensure from address is set to this identity's address
     const txWithAddress = { ...tx, from: this.address };
     // Create message to sign (tx without sig and publicKey fields)
     const { sig, publicKey, ...txWithoutSig } = txWithAddress;
     const message = JSON.stringify(txWithoutSig);
     const messageBytes = new TextEncoder().encode(message);
-    const signature = await mayo.sign(messageBytes, this.privateKey);
+    // Route through the ONE signer seam (xid/src/signer.js) — do not call the
+    // signature primitive directly here.
+    const signature = await signerSign(messageBytes, this.privateKey);
     // Return transaction with signature, but NO publicKey
     return { ...txWithAddress, sig: signature };
   }
@@ -122,13 +124,12 @@ export class Identity {
       return false;
     }
     
-    const mayo = await MAYOWasm.load();
     const { sig, ...txWithoutSig } = signedTx;
     const message = JSON.stringify(txWithoutSig);
     const messageBytes = new TextEncoder().encode(message);
-    
-    // Verify signature
-    const isValidSig = await mayo.verify(messageBytes, sig, publicKey);
+
+    // Verify signature through the ONE signer seam (xid/src/signer.js).
+    const isValidSig = await signerVerify(messageBytes, sig, publicKey);
     if (!isValidSig) {
       return false;
     }
