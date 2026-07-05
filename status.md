@@ -1,5 +1,18 @@
 # XMBL Testnet - Phase 1 & 2 Review
 
+> **UPDATE (A1/A2/A4/A6, 2026-07):** the "Missing Components" list below is
+> historical. Since this doc was written: npm workspaces are configured at
+> root (A1, covering all 11 modules); every module now uses jest, xn's
+> mocha suite was mechanically ported (A2); the MAYO WASM source is vendored
+> at `xid/mayo-cube/` and builds/tests reproducibly from a fresh clone with
+> no machine-local prebuilt artifact (F1/F1a/A6, `npm -w xid test`); GitHub
+> Actions CI now exists at `.github/workflows/ci.yml` (A4), running
+> `xid`+`xn`+`xsc`+root integration suites as a required gate, with
+> `xclt`/`xvsm`/`xpc`/`xcli`/`xda`'s pre-existing, unrelated test failures
+> run informationally (`continue-on-error`) rather than silently patched or
+> hidden — see the workflow file's inline comments for what's failing and
+> why. ESLint/Prettier remain unconfigured (out of scope for A4/A6).
+
 ## Executive Summary
 
 **Phase 1 Status**: ⚠️ **PARTIALLY COMPLETE** (60% complete)

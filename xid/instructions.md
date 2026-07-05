@@ -41,7 +41,15 @@ npm install --save-dev emscripten jest @types/jest
 git clone https://github.com/PQCMayo/MAYO-C.git vendor/mayo-c
 ```
 
-**Status:** Project initialized with dependencies installed. MAYO C source cloned to `mayo-c-source/`.
+**Status:** Project initialized with dependencies installed. MAYO C source
+cloned to `mayo-c-source/`.
+
+> **UPDATE (A6, 2026-07):** `mayo-c-source/` was committed as a git submodule
+> gitlink with no `.gitmodules` entry, so it resolved empty on every fresh
+> clone and has been removed. The working, buildable, tested vendored source
+> now lives at `xid/mayo-cube/` (copied source, not a submodule — see
+> `xid/mayo-cube/VENDOR.md`), built via `xid/build-mayo-cube-wasm.sh`. All
+> "Status" notes below referencing `mayo-c-source/` are historical.
 
 ### Step 2: Emscripten Build Configuration ✅ COMPLETED
 
