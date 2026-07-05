@@ -1,23 +1,22 @@
-import { expect } from 'chai';
 import { ConnectionManager } from '../src/connection.js';
 
 describe('Connection Manager', () => {
   it('should maintain connection pool', () => {
     const manager = new ConnectionManager({ maxConnections: 10 });
-    expect(manager.getMaxConnections()).to.equal(10);
+    expect(manager.getMaxConnections()).toBe(10);
   });
 
   it('should add connection', () => {
     const manager = new ConnectionManager();
     manager.addConnection('peer1', {});
-    expect(manager.getConnectionCount()).to.equal(1);
+    expect(manager.getConnectionCount()).toBe(1);
   });
 
   it('should remove connection', () => {
     const manager = new ConnectionManager();
     manager.addConnection('peer1', {});
     manager.removeConnection('peer1');
-    expect(manager.getConnectionCount()).to.equal(0);
+    expect(manager.getConnectionCount()).toBe(0);
   });
 
   it('should enforce max connections', () => {
@@ -26,9 +25,9 @@ describe('Connection Manager', () => {
     manager.addConnection('peer2', {});
     try {
       manager.addConnection('peer3', {});
-      expect.fail('Should have thrown error');
+      throw new Error('Should have thrown error');
     } catch (error) {
-      expect(error.message).to.include('Max connections reached');
+      expect(error.message).toContain('Max connections reached');
     }
   });
 
@@ -36,8 +35,8 @@ describe('Connection Manager', () => {
     const manager = new ConnectionManager();
     const conn = { id: 'peer1' };
     manager.addConnection('peer1', conn);
-    expect(manager.getConnection('peer1')).to.equal(conn);
-    expect(manager.getConnection('nonexistent')).to.be.undefined;
+    expect(manager.getConnection('peer1')).toBe(conn);
+    expect(manager.getConnection('nonexistent')).toBeUndefined();
   });
 
   it('should get all connections', () => {
@@ -45,9 +44,8 @@ describe('Connection Manager', () => {
     manager.addConnection('peer1', { id: 1 });
     manager.addConnection('peer2', { id: 2 });
     const all = manager.getAllConnections();
-    expect(all.length).to.equal(2);
-    expect(all[0][0]).to.equal('peer1');
-    expect(all[1][0]).to.equal('peer2');
+    expect(all.length).toBe(2);
+    expect(all[0][0]).toBe('peer1');
+    expect(all[1][0]).toBe('peer2');
   });
 });
-
