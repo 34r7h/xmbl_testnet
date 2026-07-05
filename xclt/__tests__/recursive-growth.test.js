@@ -189,7 +189,10 @@ describe('Recursive Superstructure Growth', () => {
       console.log(`✓ Level 3 mega-cube contains 27 Level 2 super-cubes`);
       console.log(`✓ RECURSIVE FRACTAL STRUCTURE DEMONSTRATED: Cubes → Super-cubes → Mega-cubes`);
     }
-  });
+    // 19,683 transactions through a real LevelDB backend take ~10s of wall-clock
+    // (formation itself is ~0.6s; the rest is the db writes). Give it room —
+    // jest's default 5s timeout is too short for this integration-scale test.
+  }, 30000);
 
   test('should order parallel cubes by validator average timestamp', async () => {
     const cubeCompletions = [];
