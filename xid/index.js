@@ -7,6 +7,8 @@ export { CurveSource, PlaceholderCurveSource, canonicalizeRequest, CURVE_PARAM_B
 export {
   ensureAgentIdentity,
   loadAgentIdentity,
+  ensureIdentityAtPath,
+  loadIdentityAtPath,
   getPublicRecord,
   encryptSecret,
   decryptSecret,

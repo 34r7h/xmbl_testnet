@@ -90,6 +90,19 @@ export class XMBLCore {
     this.xpc.xid = this.xid;
     return this.xid;
   }
+
+  // Bind an externally-loaded identity (e.g. the C1 keystore identity the daemon
+  // loads from disk at config.identity_path) as this node's identity, propagating
+  // it to the two subsystems that sign/anchor with it (xclt, xpc) — the same three
+  // references createIdentity() sets. Call this BEFORE start(): start() only mints
+  // a fresh identity when none is set (`if (!this.xid)`), so a pre-set identity is
+  // preserved and the node's address stays stable across restarts.
+  setIdentity(identity) {
+    this.xid = identity;
+    this.xclt.xid = this.xid;
+    this.xpc.xid = this.xid;
+    return this.xid;
+  }
   
   async submitTransaction(tx) {
     // Sign transaction

@@ -12,14 +12,22 @@
 // that act on the running node via its pidfile.
 //
 // Scope (A5b): lifecycle only. Role flags are passed through and recorded, not
-// used to gate subsystems (that is group-E). The daemon's on-disk identity is
-// XMBLCore's own (created at boot); binding it to `identity_path` (the C1
-// keystore) is deliberate follow-up wiring, not this task.
+// used to gate subsystems (that is group-E).
+//
+// Identity (A5e): the node loads a STABLE identity from the C1 keystore at
+// `config.identity_path` on start (create-once if absent, 0600) and hands it to
+// XMBLCore BEFORE boot, so restarts keep the same xmbl `address` instead of
+// minting a fresh XMBLCore identity each time. D3 (submit_tx from the node wallet)
+// and E1 (validation tasks assigned to the submitting identity) require this
+// stability. NOTE: this binds the xmbl `address` (the wallet/signing identity);
+// the libp2p `peer_id` is xn's own key and is NOT persisted here — see
+// scripts/node-identity-check.mjs and the A5e submission note.
 import fs from 'fs';
 import path from 'path';
 import { loadConfig } from './core/node-config.js';
 import { createControlServer } from './core/control-socket.js';
 import { createMetricsServer } from './core/metrics-server.js';
+import { ensureIdentityAtPath, loadIdentityAtPath } from './xid/index.js';
 // NOTE: XMBLCore is imported lazily inside `start` only. Importing core/index.js
 // pulls in xvsm/xpc/xsc, which print startup banners at module-load time — that
 // would pollute the machine-readable stdout of `status`/`stop`, which are pure
@@ -94,6 +102,16 @@ async function cmdStart(cfgPath) {
 
   const { XMBLCore } = await import('./core/index.js'); // lazy: see top-of-file note
   const core = new XMBLCore(toCoreConfig(cfg, dataDir));
+
+  // A5e: bind a STABLE node identity from the C1 keystore at cfg.identity_path
+  // BEFORE start(). loadConfig has already rejected a missing/empty identity_path,
+  // so there is no silent-mint fallback: create-once (0600) if the keystore file is
+  // absent, load it if present, then hand it to XMBLCore (which skips its own
+  // fresh-mint because xid is now set).
+  const idInfo = await ensureIdentityAtPath(cfg.identity_path);
+  const identity = await loadIdentityAtPath(cfg.identity_path);
+  core.setIdentity(identity);
+
   await core.start();
 
   // start() opens no LevelDB (level is lazy). Open the ledger and write a boot
@@ -140,7 +158,10 @@ async function cmdStart(cfgPath) {
       started_at: status.started_at,
     }),
   });
-  console.log(`xmbl-node started pid=${process.pid} peer=${peerId} sock=${sockPath} metrics=${metricsUrl}`);
+  console.log(
+    `xmbl-node started pid=${process.pid} address=${core.xid ? core.xid.address : null}` +
+      ` (identity ${idInfo.created ? 'created' : 'loaded'} at ${idInfo.path}) peer=${peerId} sock=${sockPath} metrics=${metricsUrl}`,
+  );
 
   // Keep the process alive even if no networking role holds the loop open, and
   // shut down cleanly on signal: close the control socket, flush every LevelDB
