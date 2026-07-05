@@ -1,0 +1,45 @@
+# G2: image for the local dev swarm (docker-compose.swarm.yml). One image runs
+# every node — docker-compose parameterizes each replica via env vars, read by
+# scripts/swarm-entrypoint.mjs.
+#
+# Multi-stage: the WASM build needs emcc (only available in the emsdk image);
+# the runtime image just needs the compiled artifact, not the whole toolchain.
+
+FROM emscripten/emsdk:3.1.51 AS wasm-builder
+WORKDIR /src
+COPY xid/mayo-cube ./mayo-cube
+COPY xid/build-mayo-cube-wasm.sh .
+RUN chmod +x build-mayo-cube-wasm.sh && \
+    mkdir -p xid && mv mayo-cube xid/mayo-cube && mv build-mayo-cube-wasm.sh xid/ && \
+    cd xid && ./build-mayo-cube-wasm.sh
+
+FROM node:22-bookworm-slim AS runtime
+# Node >=22 required: core/index.js's dependency chain uses Promise.withResolvers
+# (ES2024), unavailable on Node 20 — confirmed by a crash-on-boot when this
+# image was pinned to node:20-bookworm-slim ("xmbl-node: Promise.withResolvers
+# is not a function").
+# classic-level (LevelDB bindings) may need to build from source if no
+# prebuilt binary matches the image's platform/libc.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY xcli/package.json ./xcli/
+COPY xclt/package.json ./xclt/
+COPY xid/package.json ./xid/
+COPY xn/package.json ./xn/
+COPY xpc/package.json ./xpc/
+COPY xsc/package.json ./xsc/
+COPY xsim/package.json ./xsim/
+COPY xv/package.json ./xv/
+COPY xvsm/package.json ./xvsm/
+COPY xbe/package.json ./xbe/
+COPY xda/package.json ./xda/
+RUN npm install
+
+COPY . .
+COPY --from=wasm-builder /src/xid/mayo-cube/mayo.cjs /src/xid/mayo-cube/mayo.wasm ./xid/mayo-cube/
+
+ENTRYPOINT ["node", "scripts/swarm-entrypoint.mjs"]

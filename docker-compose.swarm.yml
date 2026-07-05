@@ -1,0 +1,118 @@
+# G2: local dev swarm — 5 xmbl-node daemons + xsim + a tx feeder.
+#   npm run swarm       -> docker compose -f docker-compose.swarm.yml up --build -d
+#   npm run swarm:down  -> docker compose -f docker-compose.swarm.yml down -v
+#
+# See docs/dev-swarm.md for what this proves today vs. what's blocked on two
+# pre-existing, precisely-diagnosed substrate gaps (bootstrap_peers dial +
+# gossip subscribe timing) found while building this.
+services:
+  xmbl-node-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.swarm
+    environment:
+      SWARM_NODE_NAME: xmbl-node-1
+      SWARM_ROLE: bootstrap
+      SWARM_LISTEN_PORT: "4001"
+      SWARM_ROLE_VALIDATE: "1"
+      SWARM_ROLE_STORAGE: "1"
+    volumes:
+      - node1-data:/data
+      - swarm-meta:/swarm-meta
+
+  xmbl-node-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.swarm
+    environment:
+      SWARM_NODE_NAME: xmbl-node-2
+      SWARM_ROLE: peer
+      SWARM_LISTEN_PORT: "4001"
+      SWARM_ROLE_VALIDATE: "1"
+    volumes:
+      - node2-data:/data
+      - swarm-meta:/swarm-meta
+    depends_on:
+      - xmbl-node-1
+
+  xmbl-node-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.swarm
+    environment:
+      SWARM_NODE_NAME: xmbl-node-3
+      SWARM_ROLE: peer
+      SWARM_LISTEN_PORT: "4001"
+      SWARM_ROLE_VALIDATE: "1"
+    volumes:
+      - node3-data:/data
+      - swarm-meta:/swarm-meta
+    depends_on:
+      - xmbl-node-1
+
+  xmbl-node-4:
+    build:
+      context: .
+      dockerfile: Dockerfile.swarm
+    environment:
+      SWARM_NODE_NAME: xmbl-node-4
+      SWARM_ROLE: peer
+      SWARM_LISTEN_PORT: "4001"
+      SWARM_ROLE_STORAGE: "1"
+    volumes:
+      - node4-data:/data
+      - swarm-meta:/swarm-meta
+    depends_on:
+      - xmbl-node-1
+
+  xmbl-node-5:
+    build:
+      context: .
+      dockerfile: Dockerfile.swarm
+    environment:
+      SWARM_NODE_NAME: xmbl-node-5
+      SWARM_ROLE: peer
+      SWARM_LISTEN_PORT: "4001"
+      SWARM_ROLE_COMPUTE: "1"
+    volumes:
+      - node5-data:/data
+      - swarm-meta:/swarm-meta
+    depends_on:
+      - xmbl-node-1
+
+  xsim:
+    build:
+      context: .
+      dockerfile: Dockerfile.swarm
+    entrypoint: ["node", "xsim/index.js", "--run"]
+    environment:
+      PORT: "3006"
+
+  swarm-feed-txs:
+    build:
+      context: .
+      dockerfile: Dockerfile.swarm
+    entrypoint: ["node", "scripts/swarm-feed-txs.mjs"]
+    environment:
+      SWARM_TX_COUNT: "20"
+      SWARM_TX_INTERVAL_MS: "500"
+    volumes:
+      - node1-data:/nodes/xmbl-node-1:ro
+      - node2-data:/nodes/xmbl-node-2:ro
+      - node3-data:/nodes/xmbl-node-3:ro
+      - node4-data:/nodes/xmbl-node-4:ro
+      - node5-data:/nodes/xmbl-node-5:ro
+    depends_on:
+      - xmbl-node-1
+      - xmbl-node-2
+      - xmbl-node-3
+      - xmbl-node-4
+      - xmbl-node-5
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:
+  node4-data:
+  node5-data:
+  swarm-meta:
