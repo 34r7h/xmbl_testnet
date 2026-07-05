@@ -1,10 +1,9 @@
-import { expect } from 'chai';
 import { GossipManager } from '../src/gossip.js';
 
 describe('WebTorrent Gossip', () => {
   it('should create gossip manager', () => {
     const gossip = new GossipManager();
-    expect(gossip).to.be.not.undefined;
+    expect(gossip).not.toBeUndefined();
   });
 
   it('should broadcast message', async () => {
@@ -17,8 +16,8 @@ describe('WebTorrent Gossip', () => {
   it('should receive gossip messages', (done) => {
     const gossip = new GossipManager();
     gossip.on('message', (msg) => {
-      expect(msg).to.have.property('type');
-      expect(msg).to.have.property('data');
+      expect(msg).toHaveProperty('type');
+      expect(msg).toHaveProperty('data');
       done();
     });
     // Simulate receiving message
@@ -27,7 +26,7 @@ describe('WebTorrent Gossip', () => {
 
   it('should handle message parsing errors in wire messages', () => {
     const gossip = new GossipManager();
-    
+
     // Test that JSON parsing errors are handled gracefully
     // Simulate the error handling path in joinSwarm
     const mockWire = {
@@ -38,20 +37,20 @@ describe('WebTorrent Gossip', () => {
             JSON.parse('invalid json');
           } catch (error) {
             // Error should be caught and logged, not crash
-            expect(error).to.be.not.undefined;
-            expect(error.message).to.include('JSON');
+            expect(error).not.toBeUndefined();
+            expect(error.message).toContain('JSON');
           }
         }
       }
     };
-    
+
     // Verify error handling path exists
-    expect(mockWire).to.be.not.undefined;
+    expect(mockWire).not.toBeUndefined();
   });
 
   it('should join swarm and handle wire events', async () => {
     const gossip = new GossipManager();
-    
+
     // Mock WebTorrent client
     const mockSwarm = {
       on: (event, handler) => {
@@ -70,19 +69,19 @@ describe('WebTorrent Gossip', () => {
       },
       wires: []
     };
-    
+
     gossip.client.add = () => mockSwarm;
-    
+
     // Join swarm
     await gossip.joinSwarm('test-swarm-id');
-    
+
     // Verify swarm is set
-    expect(gossip.swarm).to.equal(mockSwarm);
+    expect(gossip.swarm).toBe(mockSwarm);
   });
 
   it('should handle broadcast errors when no swarm', async () => {
     const gossip = new GossipManager();
-    
+
     // Broadcast without joining swarm
     await gossip.broadcast({ type: 'test', data: {} });
     // Should handle gracefully
@@ -90,15 +89,15 @@ describe('WebTorrent Gossip', () => {
 
   it('should handle wire send errors', async () => {
     const gossip = new GossipManager();
-    
+
     const mockWire = {
       send: () => { throw new Error('Send failed'); }
     };
-    
+
     gossip.swarm = {
       wires: [mockWire]
     };
-    
+
     // Should handle send error gracefully
     await gossip.broadcast({ type: 'test', data: {} });
   });
@@ -108,9 +107,8 @@ describe('WebTorrent Gossip', () => {
     const destroySpy = gossip.client.destroy.bind(gossip.client);
     let destroyed = false;
     gossip.client.destroy = () => { destroyed = true; };
-    
+
     gossip.destroy();
-    expect(destroyed).to.be.true;
+    expect(destroyed).toBe(true);
   });
 });
-
