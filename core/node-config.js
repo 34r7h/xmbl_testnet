@@ -5,7 +5,7 @@ import fs from 'fs';
  * coordinator (which supervises the node process) and every group-E role worker
  * (validate / storage / compute / relay / lead) reads. This JS module is the
  * single source of truth: it defines the field set, the defaults, and the
- * validator. `xn/config.example.json` and `docs/node-config.md` are derived from
+ * validator. `config.node.example.json` and `docs/node-config.md` are derived from
  * it and kept in lock-step by the test suite.
  *
  * Design rules (deliberately conservative — this path gets hardcoded everywhere):
