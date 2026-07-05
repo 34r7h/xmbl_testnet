@@ -3,6 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
+import { execFile } from 'child_process';
 import { Identity } from '../src/identity.js';
 import {
   ensureAgentIdentity,
@@ -106,6 +107,79 @@ describe('ensureAgentIdentity — acceptance criteria', () => {
     const signed = await identity.signTransaction({ to: 'xmbDEST', amount: 1, nonce: 1 });
     expect(await Identity.verifyTransaction(signed, identity.publicKey)).toBe(true);
   });
+});
+
+describe('master-key first-use (file path, no injected key)', () => {
+  let masterKeyPath;
+  beforeEach(() => {
+    masterKeyPath = path.join(agentsDir, 'xmbl-master.key');
+  });
+
+  test('creates the master key file 0600 on first use, and reuses it', async () => {
+    const a = await ensureAgentIdentity('agent-a', { agentsDir, masterKeyPath });
+    expect(fs.existsSync(masterKeyPath)).toBe(true);
+    expect(fs.statSync(masterKeyPath).mode & 0o777).toBe(0o600);
+    const masterBytes = fs.readFileSync(masterKeyPath);
+
+    // a second agent's first-use reuses the same master key (file unchanged)
+    await ensureAgentIdentity('agent-b', { agentsDir, masterKeyPath });
+    expect(fs.readFileSync(masterKeyPath).equals(masterBytes)).toBe(true);
+
+    // both decrypt under the shared master
+    await expect(loadAgentIdentity('agent-a', { agentsDir, masterKeyPath })).resolves.toBeTruthy();
+    await expect(loadAgentIdentity('agent-b', { agentsDir, masterKeyPath })).resolves.toBeTruthy();
+    void a;
+  });
+
+  // The regression this task fixes: N agents doing first-ever keygen CONCURRENTLY
+  // in SEPARATE PROCESSES on a fresh box must not clobber each other's master key.
+  // (Same-process Promise.all can't reproduce it — loadMasterKey is synchronous, so
+  // the first caller finishes creating the file before any other runs. Real OS-level
+  // concurrency requires real processes.)
+  test('concurrent first-use never loses a secret (N processes, all decrypt)', async () => {
+    const N = 8;
+    const moduleUrl = new URL('../src/agent-keystore.js', import.meta.url).href;
+    // Each child does a first-use ensureAgentIdentity against the SAME fresh master path.
+    const childScript = `
+      const { ensureAgentIdentity } = await import(process.env.KS_MODULE);
+      await ensureAgentIdentity(process.env.KS_AGENT, {
+        agentsDir: process.env.KS_AGENTS_DIR,
+        masterKeyPath: process.env.KS_MASTER,
+      });
+    `;
+    const runChild = (agentId) =>
+      new Promise((resolve, reject) => {
+        execFile(
+          process.execPath,
+          ['--input-type=module', '-e', childScript],
+          {
+            env: {
+              ...process.env,
+              KS_MODULE: moduleUrl,
+              KS_AGENT: agentId,
+              KS_AGENTS_DIR: agentsDir,
+              KS_MASTER: masterKeyPath,
+              HANDOFF_XMBL_MASTER_KEY: '', // force the file path, not the env override
+            },
+          },
+          (err, stdout, stderr) => (err ? reject(new Error(stderr || err.message)) : resolve()),
+        );
+      });
+
+    // launch all N concurrently to maximize create-race overlap
+    await Promise.all(Array.from({ length: N }, (_, i) => runChild(`race-agent-${i}`)));
+
+    // exactly one master key survived, 0600
+    expect(fs.existsSync(masterKeyPath)).toBe(true);
+    expect(fs.statSync(masterKeyPath).mode & 0o777).toBe(0o600);
+
+    // EVERY agent's secret must still decrypt under the surviving master key —
+    // this is the property the race previously broke.
+    for (let i = 0; i < N; i++) {
+      const identity = await loadAgentIdentity(`race-agent-${i}`, { agentsDir, masterKeyPath });
+      expect(identity.privateKey).toBeTruthy();
+    }
+  }, 30000);
 });
 
 describe('secret never leaks (constraint b)', () => {

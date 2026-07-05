@@ -94,9 +94,49 @@ export function loadMasterKey(opts = {}) {
     fs.chmodSync(keyPath, 0o600);
     return decodeMasterKeyString(fs.readFileSync(keyPath, 'utf8'));
   }
+  // First use: create the master key with an EXCLUSIVE create on the FINAL path
+  // (flag 'wx' = O_CREAT|O_EXCL). A temp-file+rename is atomic but last-write-wins,
+  // so two agents doing first-ever keygen concurrently on a fresh box would each
+  // generate a different master key and clobber each other — leaving the earlier
+  // agent's secret encrypted under a key that no longer exists (undecryptable).
+  // With O_EXCL exactly one creator wins; every loser adopts the winner's key.
+  fs.mkdirSync(path.dirname(keyPath), { recursive: true });
   const key = crypto.randomBytes(MASTER_KEY_BYTES);
-  writeFileAtomic(keyPath, key.toString('base64') + '\n', 0o600);
-  return key;
+  try {
+    fs.writeFileSync(keyPath, key.toString('base64') + '\n', { flag: 'wx', mode: 0o600 });
+    fs.chmodSync(keyPath, 0o600); // enforce mode regardless of umask
+    return key;
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err;
+    return adoptMasterKey(keyPath); // lost the create race — use the winner's key
+  }
+}
+
+// Synchronous short sleep (loadMasterKey is sync). Avoids a busy-spin while a
+// concurrent creator finishes writing the key file.
+function sleepMs(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// Adopt a master key created by a concurrent winner. The winner creates the file
+// (O_EXCL) and then writes its bytes; a loser can observe the file after create
+// but before the bytes land, so re-read briefly until it parses to a valid key.
+function adoptMasterKey(keyPath) {
+  let lastErr;
+  for (let i = 0; i < 200; i++) { // up to ~1s; the write lands in microseconds
+    try {
+      const raw = fs.readFileSync(keyPath, 'utf8').trim();
+      if (raw.length > 0) {
+        const key = decodeMasterKeyString(raw);
+        fs.chmodSync(keyPath, 0o600);
+        return key;
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+    sleepMs(5);
+  }
+  throw new Error(`agent-keystore: master key at ${keyPath} unreadable after wait: ${lastErr?.message || 'empty file'}`);
 }
 
 function deriveKek(masterKey, salt, agentId) {
