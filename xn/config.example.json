@@ -1,0 +1,23 @@
+{
+  "identity_path": "~/.handoff/agents/my-agent/xmbl.json",
+  "data_dir": "./xmbl-data",
+  "listen_addrs": [
+    "/ip4/0.0.0.0/tcp/4737",
+    "/ip4/0.0.0.0/tcp/4738/ws"
+  ],
+  "bootstrap_peers": [
+    "/dns4/bootstrap-1.xmbl.testnet/tcp/4737/p2p/12D3KooWExamplePeerIdReplaceMeReplaceMeReplace"
+  ],
+  "roles": {
+    "validate": true,
+    "storage": false,
+    "compute": false,
+    "relay": false,
+    "lead": false
+  },
+  "resource_caps": {
+    "disk_mb": 1024,
+    "compute_cpu_ms": 10000,
+    "compute_mem_mb": 512
+  }
+}
