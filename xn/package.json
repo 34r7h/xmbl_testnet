@@ -1,9 +1,12 @@
 {
-  "name": "xapp",
+  "name": "xn",
   "version": "0.1.0",
   "type": "module",
   "main": "index.js",
-  "description": "XMBL Desktop Application",
+  "exports": {
+    ".": "./index.js"
+  },
+  "description": "XMBL Networking",
   "scripts": {
     "test": "NODE_OPTIONS=--experimental-vm-modules npx jest",
     "coverage": "NODE_OPTIONS=--experimental-vm-modules npx jest --coverage"

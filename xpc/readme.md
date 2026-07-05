@@ -2,6 +2,24 @@
 
 XMBL's Peer Consensus module.
 
+## Public API
+
+```js
+import {
+  ConsensusWorkflow,
+  LeaderElection,
+  Mempool,
+  ValidationTaskManager,
+  ConsensusGossip,
+} from 'xpc';
+```
+
+- `ConsensusWorkflow` — class orchestrating a transaction's path through the consensus mempools described below.
+- `LeaderElection` — class implementing the uptime/response-time-based leader election described below.
+- `Mempool` — class implementing a single mempool (raw_tx / validation_tasks / locked_utxo / processing_tx / tx).
+- `ValidationTaskManager` — class assigning and tracking validation tasks issued to validators.
+- `ConsensusGossip` — class gossiping transactions, validation tasks, and leader lists between nodes.
+
 Examples
 Alice makes a transaction
 

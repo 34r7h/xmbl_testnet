@@ -56,3 +56,38 @@ XCLT supports five transaction types (defined in `tokens.json`):
 
 See `tokens.json` for detailed field definitions and requirements for each transaction type.
 
+## Public API
+
+```js
+import {
+  Ledger,
+  Block,
+  Face,
+  Cube,
+  SuperCube,
+  calculateDigitalRoot,
+  getBlockPosition,
+  getFaceIndex,
+  validateTransaction,
+  getTransactionType,
+  positionToLocalCoords,
+  faceIndexToZ,
+  calculateBlockCoords,
+  calculateCubeCoords,
+  calculateAbsoluteCoords,
+  calculateVector,
+  calculateFractalAddress,
+  getOrigin,
+} from 'xclt';
+```
+
+- `Ledger` — class managing the cubic ledger's persisted block/cube/super-cube state.
+- `Block` — class for a single 1×1×1 transaction unit.
+- `Face` — class for a 3×3 face of 9 units.
+- `Cube` — class composed of 3 faces (27 units).
+- `SuperCube` — class for a Level-2 aggregation of 27 cubes.
+- `calculateDigitalRoot(...)` — function deriving a digital root from a hash for placement.
+- `getBlockPosition(...)` / `getFaceIndex(...)` — functions computing a unit's placement within its face/cube.
+- `validateTransaction(...)` / `getTransactionType(...)` — functions validating and classifying a submitted transaction.
+- `positionToLocalCoords(...)`, `faceIndexToZ(...)`, `calculateBlockCoords(...)`, `calculateCubeCoords(...)`, `calculateAbsoluteCoords(...)`, `calculateVector(...)`, `calculateFractalAddress(...)`, `getOrigin(...)` — geometry functions mapping placement indices to spatial coordinates across hierarchy levels.
+
