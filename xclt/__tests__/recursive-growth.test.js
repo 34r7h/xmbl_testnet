@@ -1,16 +1,19 @@
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import { Ledger } from '../src/ledger.js';
-import { rmSync, existsSync } from 'fs';
+import { rmSync, existsSync, mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 describe('Recursive Superstructure Growth', () => {
   let ledger;
-  const testDbPath = './data/ledger-recursive-test';
+  let testDbPath;
 
   beforeEach(() => {
-    // Clean up test database
-    if (existsSync(testDbPath)) {
-      rmSync(testDbPath, { recursive: true, force: true });
-    }
+    // Use a unique temp dir, not ./data/ (which is tracked in git and would be
+    // polluted), and which is typically tmpfs-backed — the mega-cube test drives
+    // ~19,683 db writes, so keeping them off the repo disk avoids both the churn
+    // and the I/O contention that made the heavy test flaky under parallel load.
+    testDbPath = mkdtempSync(join(tmpdir(), 'xclt-recursive-'));
     ledger = new Ledger({ dbPath: testDbPath });
   });
 
@@ -189,10 +192,11 @@ describe('Recursive Superstructure Growth', () => {
       console.log(`✓ Level 3 mega-cube contains 27 Level 2 super-cubes`);
       console.log(`✓ RECURSIVE FRACTAL STRUCTURE DEMONSTRATED: Cubes → Super-cubes → Mega-cubes`);
     }
-    // 19,683 transactions through a real LevelDB backend take ~10s of wall-clock
-    // (formation itself is ~0.6s; the rest is the db writes). Give it room —
-    // jest's default 5s timeout is too short for this integration-scale test.
-  }, 30000);
+    // 19,683 transactions through a real LevelDB backend take ~10s solo (formation
+    // itself is ~0.6s; the rest is db writes). Under full-suite parallel load the
+    // db writes contend for CPU/IO, so give a generous 60s ceiling — assertions
+    // unchanged; this only prevents a contention-induced timeout flake.
+  }, 60000);
 
   test('should order parallel cubes by validator average timestamp', async () => {
     const cubeCompletions = [];
