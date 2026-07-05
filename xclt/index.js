@@ -16,3 +16,8 @@ export {
   calculateFractalAddress,
   getOrigin
 } from './src/geometry.js';
+export {
+  extractCube,
+  extractFromLedger,
+  serializeExtraction
+} from './src/cube-extraction.js';
