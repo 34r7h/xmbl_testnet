@@ -2,7 +2,7 @@
 
 XMBL's Cubic Ledger Technology module.
 
-All transactions submitted to the network mempools are hashed, and a digital root is derived from that hash to determine placement in the hierarchical cubic structure.
+All transactions submitted to the network mempools are hashed. Placement in the hierarchical cubic structure is **hash-based**: blocks accumulate in a face and, once the face holds 9, they are sorted by hash to assign positions 0-8 deterministically. (Digital root was used for placement in an earlier design but was removed — see "Placement Logic" below.)
 
 ## Core Concepts
 
@@ -13,8 +13,10 @@ All transactions submitted to the network mempools are hashed, and a digital roo
 **Cube**: Composed of 3 faces, containing 27 units total.
 
 **Placement Logic**: The same placement mechanism works at all hierarchical levels:
-- **Unit Placement in Face**: For a given unit ID, its placement within a face (3×3 grid, positions 0-8, row-major) is determined by the digital root of the unit ID.
-- **Face Placement in Cube**: For a given unit ID, the face's placement within a cube (3 faces, indexed 0-2) is determined by the unit ID modulo 3.
+- **Unit Placement in Face**: Units accumulate in a face; once a face holds 9, they are **sorted by hash** and assigned positions 0-8 (lowest hash = position 0). Placement is deferred until the face is full so it is fully deterministic and independent of arrival order.
+- **Face Placement in Cube**: Once 3 faces are ready, they are **sorted by hash** and assigned to the cube's 3 face-slots (indexed 0-2).
+
+> **Note — digital root removed for placement:** an earlier design derived a digital root from the unit hash to place units immediately. That was intentionally removed: immediate digital-root placement created frequent position collisions that spawned parallel builds, and those orphaned parallel builds stalled cube construction. Placement is now hash-sort on a full face/cube. `calculateDigitalRoot()` remains in the codebase but is **not** used for placement.
 
 ## Hierarchical Growth Structure
 
@@ -86,7 +88,7 @@ import {
 - `Face` — class for a 3×3 face of 9 units.
 - `Cube` — class composed of 3 faces (27 units).
 - `SuperCube` — class for a Level-2 aggregation of 27 cubes.
-- `calculateDigitalRoot(...)` — function deriving a digital root from a hash for placement.
+- `calculateDigitalRoot(...)` — derives a digital root from a hash. Retained for compatibility; **no longer used for placement** (placement is hash-sort — see "Placement Logic").
 - `getBlockPosition(...)` / `getFaceIndex(...)` — functions computing a unit's placement within its face/cube.
 - `validateTransaction(...)` / `getTransactionType(...)` — functions validating and classifying a submitted transaction.
 - `positionToLocalCoords(...)`, `faceIndexToZ(...)`, `calculateBlockCoords(...)`, `calculateCubeCoords(...)`, `calculateAbsoluteCoords(...)`, `calculateVector(...)`, `calculateFractalAddress(...)`, `getOrigin(...)` — geometry functions mapping placement indices to spatial coordinates across hierarchy levels.
