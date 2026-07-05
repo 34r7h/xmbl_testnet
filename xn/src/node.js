@@ -38,7 +38,7 @@ export class XNNode extends EventEmitter {
           : [`/ip4/0.0.0.0/tcp/${this.options.port}`]
       },
       transports: [tcp(), webSockets()],
-      connectionEncryption: [noise()],
+      connectionEncrypters: [noise()],
       streamMuxers: [yamux()],
       peerDiscovery: [mdns()],
       services: {
@@ -70,6 +70,11 @@ export class XNNode extends EventEmitter {
 
     await this.node.start();
     this.started = true;
+
+    if (this.options.bootstrap && this.options.bootstrap.length > 0) {
+      await this.discovery.bootstrap(this.options.bootstrap);
+    }
+
     this.emit('started');
   }
 

@@ -49,6 +49,20 @@ identity pre-provisioning step was needed for this to work.
 
 ## What's proven vs. what's blocked (read before assuming "5-node consensus" works)
 
+**UPDATE (G2a):** the two gaps below are FIXED (see commit on
+`sonnet/g2a-consensus-blockers-fix`) — `bootstrap_peers` is now dialed on
+node start, and `ConsensusGossip` is constructed after `xn.start()`. A third
+prerequisite bug was found and fixed along the way: `xn/src/node.js` passed
+`connectionEncryption` to `createLibp2p`, but libp2p@3.x renamed this option
+to `connectionEncrypters` — the old key was silently ignored, so no
+connection encrypter was ever configured and every dial failed with
+`EncryptionFailedError`. With all three fixes, **`peer_count` goes 0 → 4 on
+the bootstrap node (1 on every peer) — real libp2p connections now form.**
+
+That exposed a **fourth, deeper blocker that is NOT fixed** (see below):
+gossip messages still never reach a subscriber, so `submit_tx` still throws
+`NoPeersSubscribedToTopic`. Full multi-node consensus remains unproven.
+
 **Proven, verified against real running containers, not simulated:**
 - All 5 nodes boot cleanly, each gets a real libp2p peer ID and its own
   onboard identity, and stays healthy (`node.status.json` / control socket
@@ -60,42 +74,52 @@ identity pre-provisioning step was needed for this to work.
   1:1 with submitted txs) — the daemon's transaction-intake path (control
   socket → `core.submitTransaction` → `xid.signTransaction` →
   `xpc.submitTransaction`) is real and works end-to-end per node.
+- **(G2a)** Nodes actually connect to each other: `peer_count` is 4 on the
+  bootstrap node and 1 on every peer, confirmed live via each node's
+  `/metrics` endpoint after the bootstrap-dial + connectionEncrypters fixes.
+- **(G2a)** Every node's `ConsensusGossip` does successfully call
+  `xn.subscribe('consensus:raw_tx')` on its own local pubsub instance
+  (confirmed via instrumented debug build — `pubsub.getTopics()` includes
+  the topic on every node).
 
-**NOT proven — blocked on two pre-existing substrate gaps, found and
-root-caused while building this (neither fixed here; this PR is infra-only,
-per G2's mandate):**
+**NOT proven — blocked on a real dependency-version incompatibility found
+while chasing this (not a "small targeted fix"; reported rather than
+patched around):**
 
-1. **`bootstrap_peers` is never dialed.** `core/index.js`'s `toCoreConfig()`
-   passes `{ addresses: cfg.listen_addrs, bootstrap: cfg.bootstrap_peers }`
-   into `new XNNode(config.network)`, but `xn/src/node.js`'s `XNNode`
-   constructor only reads `addresses`/`port` from its options — the
-   `bootstrap` field is silently dropped. `PeerDiscovery.bootstrap()`
-   (`xn/src/discovery.js`) exists and would dial correctly (raw `.dial(ma)`
-   on a bare multiaddr, no `/p2p/...` suffix required), but nothing in the
-   daemon startup path ever calls it. Confirmed live: every node's metrics
-   endpoint reports `peer_count: 0` even with a correct bootstrap address in
-   its config.
-2. **`ConsensusGossip` never subscribes to its own topic.** In
-   `core/index.js`, `this.gossip = new ConsensusGossip({ xn: this.xn })` runs
-   in the `XMBLCore` **constructor**, before `core.start()` (and therefore
-   `xn.start()`) has ever run. `ConsensusGossip`'s constructor
-   (`xpc/src/gossip.js`) only calls `this.xn.subscribe(this.topic)` if
-   `this.xn.started` is already `true` at that moment — which is never the
-   case, since gossip is always constructed pre-boot. So even if gap (1) were
-   fixed and peers connected, no node would ever be subscribed to receive
-   `consensus:raw_tx` broadcasts. Confirmed live: every `submit_tx` call logs
-   `Failed to broadcast transaction: PublishError.NoPeersSubscribedToTopic`
-   (the sending node isn't even subscribed to its own topic).
+**`@chainsafe/libp2p-gossipsub` has no release compatible with `libp2p@3.x`.**
+Even with peer connections established (`peer_count>0` on every node) and
+every node locally subscribed to its topic, `pubsub.getSubscribers(topic)`
+and `pubsub.getMeshPeers(topic)` stay empty on EVERY node, indefinitely (not
+a startup race — reconfirmed on a tx submitted 40+s after boot). Root cause,
+confirmed via `npm ls @libp2p/interface`: `@chainsafe/libp2p-gossipsub@14.1.2`
+(latest published version) depends on `@libp2p/interface@^2.0.0`, while
+`libp2p@3.3.4` (and every other libp2p sub-package here — tcp, websockets,
+noise, yamux, identify, mdns, kad-dht, ping — all correctly on `^3.2.4`)
+requires `@libp2p/interface@^3.2.4`. npm resolves gossipsub's own nested copy
+at `@libp2p/interface@2.11.0`, structurally separate from the `3.2.4` every
+other module uses. Connections/identify/dial all work fine (those are all on
+`interface@3.2.4` consistently); gossipsub's connect-time
+subscription-announce wiring silently no-ops because its registrar/topology
+types don't match what libp2p@3.3.4's registrar actually emits.
+**There is no gossipsub release on npm today that supports libp2p@3.x** — the
+only way to make gossipsub work here is a full dependency-tree downgrade of
+the `xn` module's entire libp2p stack to the 2.x line (rippling through
+`tcp`, `websockets`, `noise`, `yamux`, `identify`, `mdns`, `kad-dht`, `ping`,
+each pinned to a `3.x`-era major in `xn/package.json`), or swapping pubsub
+implementations — either is real scope, not a follow-up-in-passing. Do NOT
+paper over this with `allowPublishToZeroTopicPeers: true` — that would make
+`submit_tx` stop throwing while gossip messages still reach zero actual
+subscribers, i.e. fake consensus.
 
-Together these mean cross-node transaction propagation and multi-node
-consensus **do not currently function**, independent of any docker/compose
-wiring — this is application-code state, not an infra gap. Recommend a
-follow-up task (referenced from here as candidate work, not filed/claimed) to:
-(a) have the daemon call `discovery.bootstrap(cfg.bootstrap_peers)` after
-`xn.start()`, and (b) either subscribe `ConsensusGossip` lazily on its own
-`xn`'s `start` event, or move `gossip` construction to after `xn.start()` in
-`core/index.js`. Both are small, targeted fixes once someone owns them — this
-doc has the full repro so nobody needs to rediscover it.
+Recommend a follow-up task to own the libp2p-stack downgrade-or-replace
+decision; this doc has the full repro (`npm ls @libp2p/interface`, the
+`getSubscribers`/`getMeshPeers` empty-forever symptom) so nobody needs to
+rediscover it.
+
+**Also found, not fixed here (out of scope):** `xda/src/core/xmbl-core.js`
+(the desktop app's own copy of this core-assembly logic) has the same
+gossip-construction-before-`xn.start()` bug as `core/index.js` did. Not
+touched — G2a's scope was the daemon's `core/index.js`.
 
 ## Known limitation of this test bed itself
 

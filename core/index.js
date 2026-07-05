@@ -36,12 +36,12 @@ export class XMBLCore {
       xclt: this.xclt,
       xn: this.xn
     });
-    
-    // Initialize gossip with network
-    this.gossip = new ConsensusGossip({
-      xn: this.xn
-    });
-    
+
+    // Gossip is constructed after xn.start() (see start()) — its constructor
+    // only subscribes to its topic if xn.started is already true, and xn is
+    // never started yet at this point in the constructor.
+    this.gossip = null;
+
     // Initialize storage and compute
     this.pricing = new MarketPricing();
     this.xsc = new StorageNode({
@@ -56,7 +56,13 @@ export class XMBLCore {
   async start() {
     // Start network
     await this.xn.start();
-    
+
+    // Now that xn is started, construct gossip so its constructor's
+    // subscribe-if-started check actually subscribes to the topic.
+    this.gossip = new ConsensusGossip({
+      xn: this.xn
+    });
+
     // Create default identity if needed
     if (!this.xid) {
       this.xid = await Identity.create();
