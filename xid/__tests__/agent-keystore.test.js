@@ -8,6 +8,8 @@ import { Identity } from '../src/identity.js';
 import {
   ensureAgentIdentity,
   loadAgentIdentity,
+  ensureIdentityAtPath,
+  loadIdentityAtPath,
   getPublicRecord,
   encryptSecret,
   decryptSecret,
@@ -106,6 +108,52 @@ describe('ensureAgentIdentity — acceptance criteria', () => {
     const identity = await loadAgentIdentity(AGENT, opts());
     const signed = await identity.signTransaction({ to: 'xmbDEST', amount: 1, nonce: 1 });
     expect(await Identity.verifyTransaction(signed, identity.publicKey)).toBe(true);
+  });
+});
+
+// A5e: the daemon binds identity by a single `identity_path` string. These
+// wrappers derive the agent_id from the `<agentsDir>/<agent_id>/xmbl.json` path and
+// delegate to the agent_id functions above — same keygen/crypto, file resolves to
+// exactly identity_path.
+describe('ensureIdentityAtPath / loadIdentityAtPath (A5e)', () => {
+  test('creates the keystore at EXACTLY identity_path, 0600, and load returns the same address', async () => {
+    const idPath = path.join(agentsDir, 'nodeX', 'xmbl.json');
+    const res = await ensureIdentityAtPath(idPath, { masterKey: MASTER });
+    expect(res.created).toBe(true);
+    expect(path.resolve(res.path)).toBe(path.resolve(idPath)); // wrote to the exact path
+    expect(fs.statSync(idPath).mode & 0o777).toBe(0o600);
+
+    const identity = await loadIdentityAtPath(idPath, { masterKey: MASTER });
+    expect(identity.address).toBe(res.address);
+  });
+
+  test('is idempotent — a second ensure at the same path does not regenerate', async () => {
+    const idPath = path.join(agentsDir, 'nodeY', 'xmbl.json');
+    const first = await ensureIdentityAtPath(idPath, { masterKey: MASTER });
+    const raw1 = fs.readFileSync(idPath, 'utf8');
+    const second = await ensureIdentityAtPath(idPath, { masterKey: MASTER });
+    expect(second.created).toBe(false);
+    expect(second.address).toBe(first.address);
+    expect(fs.readFileSync(idPath, 'utf8')).toBe(raw1); // byte-identical, no rewrite
+  });
+
+  test('derives the agent_id from the parent dir (crypto bound to it)', async () => {
+    const idPath = path.join(agentsDir, 'boundId', 'xmbl.json');
+    const res = await ensureIdentityAtPath(idPath, { masterKey: MASTER });
+    // the agent_id-based reader resolves the same slot → same record
+    const pub = getPublicRecord('boundId', { agentsDir, masterKey: MASTER });
+    expect(pub.address).toBe(res.address);
+    expect(pub.agent_id).toBe('boundId');
+  });
+
+  test('rejects a path whose basename is not xmbl.json', async () => {
+    const bad = path.join(agentsDir, 'nodeZ', 'identity.json');
+    await expect(ensureIdentityAtPath(bad, { masterKey: MASTER })).rejects.toThrow(/xmbl\.json/);
+  });
+
+  test('rejects an empty identity_path (no default identity — never silently mints)', async () => {
+    await expect(ensureIdentityAtPath('', { masterKey: MASTER })).rejects.toThrow(/empty|identity_path/);
+    await expect(loadIdentityAtPath('   ', { masterKey: MASTER })).rejects.toThrow(/empty|identity_path/);
   });
 });
 

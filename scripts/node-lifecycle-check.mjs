@@ -20,6 +20,9 @@ import { Ledger } from '../xclt/index.js';
 const NODE = process.execPath;
 const DAEMON = fileURLToPath(new URL('../node.js', import.meta.url));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Hermetic keystore: fixed master key in the child env (no ~/.handoff writes) and
+// a controlled agents/<id>/xmbl.json path so the derived agent_id is deterministic.
+const CHILD_ENV = { ...process.env, HANDOFF_XMBL_MASTER_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' };
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'xmbl-node-check-'));
 const dataDir = path.join(tmp, 'data');
@@ -27,7 +30,7 @@ const cfgPath = path.join(tmp, 'config.node.json');
 fs.writeFileSync(
   cfgPath,
   JSON.stringify({
-    identity_path: path.join(tmp, 'xmbl.json'),
+    identity_path: path.join(tmp, 'agents', 'testnode', 'xmbl.json'),
     data_dir: dataDir,
     listen_addrs: ['/ip4/127.0.0.1/tcp/0'], // ephemeral port
     bootstrap_peers: [],
@@ -38,14 +41,14 @@ fs.writeFileSync(
 
 const children = new Set();
 function startDaemon() {
-  const c = spawn(NODE, [DAEMON, 'start', '--config', cfgPath], { stdio: 'inherit' });
+  const c = spawn(NODE, [DAEMON, 'start', '--config', cfgPath], { stdio: 'inherit', env: CHILD_ENV });
   children.add(c);
   c.on('exit', () => children.delete(c));
   return c;
 }
 function runCmd(cmd) {
   return new Promise((resolve) => {
-    execFile(NODE, [DAEMON, cmd, '--config', cfgPath], (err, stdout) => {
+    execFile(NODE, [DAEMON, cmd, '--config', cfgPath], { env: CHILD_ENV }, (err, stdout) => {
       resolve({ code: err ? (err.code ?? 1) : 0, stdout: stdout || '' });
     });
   });

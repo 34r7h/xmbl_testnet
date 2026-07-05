@@ -218,6 +218,54 @@ export async function ensureAgentIdentity(agentId, opts = {}) {
   return { address: identity.address, public_key: identity.publicKey, created: true, path: file };
 }
 
+// ── identity_path convenience (A5e) ────────────────────────────────────────────
+// The xmbl-node config carries a single `identity_path` string. By convention
+// (node-config schema) it is a `<agentsDir>/<agent_id>/xmbl.json` keystore file.
+// These wrappers derive the agent_id from that path and delegate to the
+// agent_id-based functions above — the keygen/crypto path (master-key O_EXCL race,
+// atomic 0600 write, HKDF+GCM binding) is reused UNTOUCHED, and the file the
+// wrapper resolves to IS `identity_path`. We require the `xmbl.json` filename so
+// the crypto AAD binds to the intended <agent_id> segment, never to whatever a
+// parent directory happens to be named.
+function agentFromIdentityPath(identityPath) {
+  if (typeof identityPath !== 'string' || identityPath.trim() === '') {
+    throw new Error('agent-keystore: identity_path is empty; a node has no default identity');
+  }
+  const file = path.resolve(identityPath);
+  if (path.basename(file) !== 'xmbl.json') {
+    throw new Error(
+      `agent-keystore: identity_path must be a <dir>/<agent_id>/xmbl.json keystore file, got ${identityPath}`,
+    );
+  }
+  const agentId = path.basename(path.dirname(file));
+  const agentsDir = path.dirname(path.dirname(file));
+  return { agentId, agentsDir };
+}
+
+/**
+ * Idempotently ensure the identity at `identityPath` exists (create-once, 0600),
+ * returning its broker-safe fields. Delegates to {@link ensureAgentIdentity}.
+ * @param {string} identityPath  a <agentsDir>/<agent_id>/xmbl.json path
+ * @param {{masterKey?:Buffer|string, masterKeyPath?:string}} [opts]
+ * @returns {Promise<{address:string, public_key:string, created:boolean, path:string}>}
+ */
+export async function ensureIdentityAtPath(identityPath, opts = {}) {
+  const { agentId, agentsDir } = agentFromIdentityPath(identityPath);
+  return ensureAgentIdentity(agentId, { ...opts, agentsDir });
+}
+
+/**
+ * Load the identity at `identityPath`, decrypting the secret on-box, ready to
+ * sign. Delegates to {@link loadAgentIdentity}.
+ * @param {string} identityPath  a <agentsDir>/<agent_id>/xmbl.json path
+ * @param {{masterKey?:Buffer|string, masterKeyPath?:string}} [opts]
+ * @returns {Promise<Identity>}
+ */
+export async function loadIdentityAtPath(identityPath, opts = {}) {
+  const { agentId, agentsDir } = agentFromIdentityPath(identityPath);
+  return loadAgentIdentity(agentId, { ...opts, agentsDir });
+}
+
 /**
  * Load agent <id>'s identity, decrypting the secret on-box, ready to sign.
  * @returns {Promise<Identity>}
