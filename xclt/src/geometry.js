@@ -97,15 +97,18 @@ export function calculateCubeCoords(cubeIndex, level = 1, cubeSequentialIndex = 
     const row = Math.floor(posInFace / cubesPerDimension);
     const col = posInFace % cubesPerDimension;
     
-    // Spacing: each cube is 3 units (cube size) apart
-    // Center cubes at origin: cube 0 at (0, 0, 0), cube 1 at (-3, 3, 0), etc.
+    // Spacing: each cube is 3 units (cube size) apart.
+    // Origin convention (README + this function's own comment above): the FIRST
+    // cube (index 0) IS the origin (0, 0, 0) — the coordinate system is anchored
+    // at it. The previous formula centered the 3×3×3 cube grid on the origin,
+    // which put cube 0 at (-3, 3, -3), contradicting both. Anchor at cube 0.
     const spacing = 3;
-    const offset = (cubesPerDimension - 1) / 2; // 1, to center at origin
-    
     return {
-      x: (col - offset) * spacing,
-      y: (offset - row) * spacing, // Invert y for standard coordinate system
-      z: (faceNum - offset) * spacing
+      x: col * spacing,
+      // invert y for standard (y-up) coordinates; guard the row===0 case so it
+      // yields +0 not -0 (Object.is(-0, 0) is false, which toBe(0) would reject)
+      y: row === 0 ? 0 : -row * spacing,
+      z: faceNum * spacing
     };
   }
   

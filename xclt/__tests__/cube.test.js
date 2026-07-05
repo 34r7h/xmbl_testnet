@@ -20,7 +20,7 @@ describe('Cube', () => {
     const cube = new Cube();
     const face = new Face(1);
     cube.addFace(face);
-    expect(cube.getFace(1)).toEqual(face);
+    expect(cube.getFaceByIndex(1)).toEqual(face);
   });
 
   test('should check if cube is complete', () => {
@@ -53,8 +53,8 @@ describe('Cube', () => {
     // Both cubes should exist
     expect(cube1.faces.size).toBe(1);
     expect(cube2.faces.size).toBe(1);
-    expect(cube1.getFace(0)).toBe(face1a);
-    expect(cube2.getFace(0)).toBe(face1b);
+    expect(cube1.getFaceByIndex(0)).toBe(face1a);
+    expect(cube2.getFaceByIndex(0)).toBe(face1b);
     
     // After implementation in ledger:
     // - When face index is already taken, create new cube
