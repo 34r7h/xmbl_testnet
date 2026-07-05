@@ -71,6 +71,40 @@ never a crash or hang. Exercised end-to-end by
 [`scripts/node-socket-check.mjs`](../scripts/node-socket-check.mjs)
 (`npm run node:socket-check`).
 
+## Health + metrics endpoint (A5d)
+
+While running, the daemon serves a **loopback-only** HTTP metrics endpoint. It
+starts with the node and stops on shutdown. The URL (OS-assigned port) is
+published in `node.status.json` and the control socket's `status` op as
+`metrics_url`, so the coordinator discovers it without a fixed port.
+
+- **Bind:** `127.0.0.1` **only** (never `0.0.0.0`). Loopback → the OS refuses
+  off-host connections, so the counters are served unauthenticated by design.
+- Every request returns the same plain-JSON snapshot; all values are numeric:
+
+```json
+{
+  "uptime_seconds": 12,
+  "peer_count": 0,
+  "mempool": { "raw": 0, "validation_tasks": 0, "locked_utxo": 0, "processing": 0, "tx": 0 },
+  "validations_completed": 0,
+  "shards_stored": 0,
+  "compute_jobs_run": 0
+}
+```
+
+- `uptime_seconds`, `peer_count`, and the five `mempool` stage depths are read
+  **live** from XMBLCore (the xpc mempool's raw / validation-task / locked-utxo /
+  processing / tx pipelines).
+- `validations_completed` / `shards_stored` / `compute_jobs_run` are cumulative
+  counters owned by the group-E role workers (E1/E2/E3). Until those land they
+  have not run, so they are honestly **0** — not faked; a code comment marks
+  where each role will increment its counter.
+
+Exercised by [`scripts/node-metrics-check.mjs`](../scripts/node-metrics-check.mjs)
+(`npm run node:metrics-check`): starts the node, curls the endpoint, asserts
+every field is present + numeric, and that it is not reachable off loopback.
+
 ## Scope notes (A5b)
 
 - **Role flags** are passed through and recorded in the status file; they do not

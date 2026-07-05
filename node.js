@@ -19,6 +19,7 @@ import fs from 'fs';
 import path from 'path';
 import { loadConfig } from './core/node-config.js';
 import { createControlServer } from './core/control-socket.js';
+import { createMetricsServer } from './core/metrics-server.js';
 // NOTE: XMBLCore is imported lazily inside `start` only. Importing core/index.js
 // pulls in xvsm/xpc/xsc, which print startup banners at module-load time — that
 // would pollute the machine-readable stdout of `status`/`stop`, which are pure
@@ -79,6 +80,7 @@ function toCoreConfig(cfg, dataDir) {
 }
 
 async function cmdStart(cfgPath) {
+  const startTime = Date.now(); // for the metrics uptime counter
   const cfg = loadConfig(cfgPath);
   const dataDir = path.resolve(cfg.data_dir);
   fs.mkdirSync(dataDir, { recursive: true });
@@ -104,6 +106,12 @@ async function cmdStart(cfgPath) {
     JSON.stringify({ peer_id: peerId, at: new Date().toISOString() }),
   );
 
+  // Health + metrics endpoint (A5d): loopback-only HTTP, OS-assigned port. The
+  // port is published in node.status.json + the control-socket status so the
+  // coordinator can discover it without a fixed port or a config change.
+  const metrics = await createMetricsServer({ core, port: 0, startTime });
+  const metricsUrl = `http://127.0.0.1:${metrics.port}/`;
+
   fs.writeFileSync(pidFile(dataDir), String(process.pid), { mode: 0o644 });
   const status = {
     pid: process.pid,
@@ -111,6 +119,7 @@ async function cmdStart(cfgPath) {
     address: core.xid ? core.xid.address : null,
     roles: cfg.roles,
     listen_addrs: cfg.listen_addrs,
+    metrics_url: metricsUrl,
     started_at: new Date().toISOString(),
   };
   fs.writeFileSync(statusFile(dataDir), JSON.stringify(status, null, 2), { mode: 0o644 });
@@ -127,10 +136,11 @@ async function cmdStart(cfgPath) {
       address: core.xid ? core.xid.address : null,
       roles: cfg.roles,
       listen_addrs: cfg.listen_addrs,
+      metrics_url: metricsUrl,
       started_at: status.started_at,
     }),
   });
-  console.log(`xmbl-node started pid=${process.pid} peer=${peerId} sock=${sockPath}`);
+  console.log(`xmbl-node started pid=${process.pid} peer=${peerId} sock=${sockPath} metrics=${metricsUrl}`);
 
   // Keep the process alive even if no networking role holds the loop open, and
   // shut down cleanly on signal: close the control socket, flush every LevelDB
@@ -143,6 +153,9 @@ async function cmdStart(cfgPath) {
     clearInterval(keepAlive);
     try {
       await new Promise((r) => server.close(r));
+    } catch { /* already closed */ }
+    try {
+      await new Promise((r) => metrics.server.close(r));
     } catch { /* already closed */ }
     try {
       await core.stop();
