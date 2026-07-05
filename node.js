@@ -18,6 +18,7 @@
 import fs from 'fs';
 import path from 'path';
 import { loadConfig } from './core/node-config.js';
+import { createControlServer } from './core/control-socket.js';
 // NOTE: XMBLCore is imported lazily inside `start` only. Importing core/index.js
 // pulls in xvsm/xpc/xsc, which print startup banners at module-load time — that
 // would pollute the machine-readable stdout of `status`/`stop`, which are pure
@@ -42,6 +43,7 @@ function parseArgs(argv) {
 
 const pidFile = (dataDir) => path.join(dataDir, 'node.pid');
 const statusFile = (dataDir) => path.join(dataDir, 'node.status.json');
+const sockFile = (dataDir) => path.join(dataDir, 'node.sock');
 
 function readPid(dataDir) {
   try {
@@ -112,11 +114,27 @@ async function cmdStart(cfgPath) {
     started_at: new Date().toISOString(),
   };
   fs.writeFileSync(statusFile(dataDir), JSON.stringify(status, null, 2), { mode: 0o644 });
-  console.log(`xmbl-node started pid=${process.pid} peer=${peerId}`);
+
+  // Local control socket (A5c): how the coordinator talks to this running node.
+  const sockPath = sockFile(dataDir);
+  const server = await createControlServer({
+    core,
+    config: cfg,
+    sockPath,
+    statusSnapshot: () => ({
+      pid: process.pid,
+      peer_id: peerId,
+      address: core.xid ? core.xid.address : null,
+      roles: cfg.roles,
+      listen_addrs: cfg.listen_addrs,
+      started_at: status.started_at,
+    }),
+  });
+  console.log(`xmbl-node started pid=${process.pid} peer=${peerId} sock=${sockPath}`);
 
   // Keep the process alive even if no networking role holds the loop open, and
-  // shut down cleanly on signal: flush every LevelDB (core.stop), then remove
-  // the pidfile/status and exit 0.
+  // shut down cleanly on signal: close the control socket, flush every LevelDB
+  // (core.stop), then remove the pidfile/status/sock and exit 0.
   const keepAlive = setInterval(() => {}, 1 << 30);
   let shuttingDown = false;
   const shutdown = async (sig) => {
@@ -124,12 +142,16 @@ async function cmdStart(cfgPath) {
     shuttingDown = true;
     clearInterval(keepAlive);
     try {
+      await new Promise((r) => server.close(r));
+    } catch { /* already closed */ }
+    try {
       await core.stop();
     } catch (e) {
       console.error(`xmbl-node shutdown error: ${e.message}`);
     }
     fs.rmSync(pidFile(dataDir), { force: true });
     fs.rmSync(statusFile(dataDir), { force: true });
+    fs.rmSync(sockPath, { force: true });
     console.log(`xmbl-node stopped (${sig})`);
     process.exit(0);
   };
