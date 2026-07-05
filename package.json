@@ -18,6 +18,7 @@
   "scripts": {
     "dev": "node scripts/run-modules.js",
     "node:check": "node scripts/node-lifecycle-check.mjs",
+    "node:socket-check": "node scripts/node-socket-check.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js",

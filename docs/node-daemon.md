@@ -41,6 +41,36 @@ by [`scripts/node-lifecycle-check.mjs`](../scripts/node-lifecycle-check.mjs)
 (`npm run node:check`) — hermetic (temp `data_dir`, ephemeral port) with a hard
 timeout.
 
+## Local control socket (A5c)
+
+While running, the daemon serves a newline-delimited JSON op server on a unix
+socket at `data_dir/node.sock` — this is how the handoff coordinator talks to a
+running node. The socket opens on `start` (after the core is live), and is closed
++ unlinked on clean shutdown alongside the pidfile/status.
+
+**Protocol** is byte-identical to the handoff coordinator socket, so the handoff
+side reuses its existing client (`handoff-lib` `coordCall`) by pointing
+`HANDOFF_COORD_SOCK` at `node.sock` — no new client:
+
+```
+request:  {"op":"<name>", ...args}\n      (one JSON line)
+reply:    {"ok":true, ...}\n   or   {"ok":false,"error":"..."}\n
+```
+
+| Op          | Args        | Reply |
+| ----------- | ----------- | ----- |
+| `status`    | —           | `{ok, pid, peer_id, address, roles, listen_addrs, started_at}` |
+| `peers`     | —           | `{ok, peers:[peerId…], count}` |
+| `wallet`    | —           | `{ok, address, public_key}` (the node's xmbl identity — there is no separate wallet subsystem) |
+| `roles`     | —           | `{ok, roles:{validate,storage,compute,relay,lead}}` |
+| `submit_tx` | `tx:{…}`    | `{ok, tx_id}` (guarded + 5s time-boxed so it can never hang) |
+| unknown     | —           | `{ok:false, error:"unknown op"}` |
+
+Every op is a single request/reply; any error becomes a JSON `{ok:false,error}`,
+never a crash or hang. Exercised end-to-end by
+[`scripts/node-socket-check.mjs`](../scripts/node-socket-check.mjs)
+(`npm run node:socket-check`).
+
 ## Scope notes (A5b)
 
 - **Role flags** are passed through and recorded in the status file; they do not
