@@ -5,9 +5,9 @@
   "main": "index.js",
   "description": "XMBL's Mayo Signatures",
   "scripts": {
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
-    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
-    "coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
+    "test": "NODE_OPTIONS=--experimental-vm-modules npx jest",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules npx jest --watch",
+    "coverage": "NODE_OPTIONS=--experimental-vm-modules npx jest --coverage"
   },
   "keywords": [],
   "author": "",
@@ -29,6 +29,10 @@
       "!src/**/*.test.js"
     ],
     "coverageDirectory": "coverage",
-    "coverageReporters": ["text", "json-summary", "html"]
+    "coverageReporters": [
+      "text",
+      "json-summary",
+      "html"
+    ]
   }
 }
