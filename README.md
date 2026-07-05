@@ -105,7 +105,7 @@ All modules communicate via EventEmitter pattern for loose coupling. The `core/i
 - **Block**: Fundamental unit (1×1×1) representing a single transaction
 - **Face**: 3×3 grid of 9 units (blocks at Level 1, cubes at Level 2+)
 - **Cube**: Composed of 3 faces, containing 27 units total
-- **Placement Logic**: Digital root-based deterministic placement at all hierarchical levels
+- **Placement Logic**: Hash-based deterministic placement at all hierarchical levels — see [xclt/readme.md](xclt/readme.md#core-concepts) for the full mechanism and why an earlier digital-root placement design was removed
 
 **Hierarchical Structure**:
 - **Level 1 (Atomic Cube)**: 27 blocks = 3×3×3
@@ -113,15 +113,14 @@ All modules communicate via EventEmitter pattern for loose coupling. The `core/i
 - **Level 3 (Mega-Cube)**: 19,683 blocks = 27×27×27 (27 super-cubes)
 - **Level N**: 3^(3N) blocks = (3^N)×(3^N)×(3^N)
 
-**Placement Algorithm**:
-- Unit placement in face: Digital root of unit ID determines position (0-8) in 3×3 grid
-- Face placement in cube: Unit ID modulo 3 determines face index (0-2)
+**Placement Algorithm** (hash-sort; see [xclt/readme.md](xclt/readme.md#core-concepts) for the deferred-until-full rationale):
+- Unit placement in face: units accumulate until a face holds 9, then are sorted by hash to assign position (0-8) in the 3×3 grid
+- Face placement in cube: once 3 faces are ready, they are sorted by hash and assigned to the cube's 3 face-slots (0-2)
 - Same algorithm works recursively at all levels (dimension-agnostic)
 
 **Transaction Processing**:
 - Transactions hashed (SHA-256) to generate block ID
-- Digital root calculated from transaction data + average validator timestamp
-- Block placed deterministically in cubic structure based on hash and digital root
+- Block placed deterministically in cubic structure via hash-sort once its face/cube is full (see above)
 - Coordinates and vectors calculated relative to system origin
 
 ### XVSM - Virtual State Machine
