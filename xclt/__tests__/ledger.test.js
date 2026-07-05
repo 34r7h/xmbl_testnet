@@ -3,24 +3,27 @@ import { Ledger } from '../src/ledger.js';
 import { Block } from '../src/block.js';
 import { Face } from '../src/face.js';
 import { getFaceIndex, getBlockPosition } from '../src/placement.js';
-import { rmSync } from 'fs';
+import { rmSync, existsSync, mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 describe('Ledger', () => {
   let ledger;
-  const testDbPath = './data/ledger-test';
+  let testDbPath;
 
   beforeEach(() => {
-    ledger = new Ledger(testDbPath);
+    // Use a unique temp dir, not ./data/ (which is tracked in git and would be
+    // polluted) — mirrors recursive-growth.test.js.
+    testDbPath = mkdtempSync(join(tmpdir(), 'xclt-ledger-'));
+    ledger = new Ledger({ dbPath: testDbPath });
   });
 
   afterEach(async () => {
     if (ledger && ledger.db) {
       await ledger.db.close();
     }
-    try {
+    if (existsSync(testDbPath)) {
       rmSync(testDbPath, { recursive: true, force: true });
-    } catch (e) {
-      // Ignore cleanup errors
     }
   });
 

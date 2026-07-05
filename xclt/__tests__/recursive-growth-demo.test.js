@@ -1,15 +1,17 @@
 import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import { Ledger } from '../src/ledger.js';
-import { rmSync, existsSync } from 'fs';
+import { rmSync, existsSync, mkdtempSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 
 describe('RECURSIVE SUPERSTRUCTURE GROWTH DEMONSTRATION', () => {
   let ledger;
-  const testDbPath = './data/ledger-recursive-demo';
+  let testDbPath;
 
   beforeEach(() => {
-    if (existsSync(testDbPath)) {
-      rmSync(testDbPath, { recursive: true, force: true });
-    }
+    // Use a unique temp dir, not ./data/ (which is tracked in git and would be
+    // polluted) — mirrors recursive-growth.test.js.
+    testDbPath = mkdtempSync(join(tmpdir(), 'xclt-recursive-demo-'));
     ledger = new Ledger({ dbPath: testDbPath });
   });
 
