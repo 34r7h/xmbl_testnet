@@ -69,6 +69,10 @@ export class Block {
   }
 
   serialize() {
+    // Block timestamps (and BigInts nested in tx) are nanosecond BigInts, which
+    // JSON.stringify throws on. Tag each BigInt as {__bigint__:"<digits>"} so the
+    // value survives round-trip and deserialize can revive it to a real BigInt
+    // (a plain .toString() would silently change the type and break equality).
     return JSON.stringify({
       id: this.id,
       tx: this.tx,
@@ -79,11 +83,14 @@ export class Block {
       coordinates: this.coordinates,
       vector: this.vector,
       fractalAddress: this.fractalAddress
-    });
+    }, (key, value) => (typeof value === 'bigint' ? { __bigint__: value.toString() } : value));
   }
 
   static deserialize(data) {
-    const obj = JSON.parse(data);
+    const obj = JSON.parse(data, (key, value) =>
+      (value && typeof value === 'object' && typeof value.__bigint__ === 'string')
+        ? BigInt(value.__bigint__)
+        : value);
     const block = new Block(obj.id, obj.tx, obj.hash, obj.digitalRoot, obj.timestamp, obj.location);
     // Restore calculated values if present
     if (obj.coordinates) block.coordinates = obj.coordinates;

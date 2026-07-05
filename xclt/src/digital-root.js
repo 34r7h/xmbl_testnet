@@ -8,8 +8,14 @@ import { createHash } from 'crypto';
  * @returns {number} Digital root (1-9)
  */
 export function calculateDigitalRoot(txData, averageTimestamp) {
+  // averageTimestamp is optional context; a caller passing only txData must not
+  // crash on undefined.toString(). Treat a missing timestamp as empty — the
+  // result stays deterministic for a given (txData, averageTimestamp) pair.
+  const tsPart = averageTimestamp === undefined || averageTimestamp === null
+    ? ''
+    : averageTimestamp.toString();
   // Combine tx data with average timestamp to create deterministic hash
-  const combined = JSON.stringify(txData) + averageTimestamp.toString();
+  const combined = JSON.stringify(txData) + tsPart;
   const hash = createHash('sha256').update(combined).digest('hex');
   
   // Convert hash to number

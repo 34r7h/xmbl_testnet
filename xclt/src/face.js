@@ -68,8 +68,12 @@ export class Face {
   }
 
   isComplete() {
-    // Face is complete when it has 9 blocks (sorted by hash)
-    return this.pendingBlocks.length === 9 && this._sorted;
+    // A face is complete once its 9 blocks have been hash-sorted into positions.
+    // _sortAndAssignPositions moves the 9 pending blocks into `blocks` and clears
+    // `pendingBlocks`, so completion is `blocks.size === 9 && _sorted` — the same
+    // signal the ledger uses. (The old `pendingBlocks.length === 9` check was
+    // unreachable after sorting and always reported an incomplete face.)
+    return this.blocks.size === 9 && this._sorted;
   }
 
   getHash() {

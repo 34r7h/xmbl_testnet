@@ -599,6 +599,20 @@ export class Ledger extends EventEmitter {
       }
       cube.faces.set(face.timestamp.toString(), face);
     }
+
+    // Populate childCubes: each of the 3 faces holds 9 lower-level cubes (in its
+    // `cubes` map), so the three faces together are the 27 children of this
+    // super-cube. The face-based formation above filled `faces` but left
+    // `childCubes` empty. Set it directly rather than via addChildCube, whose
+    // size===27 path would re-run the legacy _formFacesFromCubes.
+    let childIndex = 0;
+    for (const face of sortedFaces.values()) {
+      if (face.cubes) {
+        for (const childCube of face.cubes.values()) {
+          cube.childCubes.set(childIndex++, childCube);
+        }
+      }
+    }
     
     // Calculate cube ID from face hashes
     const faceRoots = Array.from(sortedFaces.values())
