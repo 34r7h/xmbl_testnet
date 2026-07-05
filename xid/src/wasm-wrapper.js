@@ -40,10 +40,12 @@ export class MAYOWasm {
     const require = createRequire(import.meta.url);
     
     // Load the CommonJS module - it exports createModule function
-    const createModule = require(resolve(__dirname, '../mayo-c-source/mayo.cjs'));
-    
+    // mayo-cube is our vendored, buildable fork (see mayo-cube/VENDOR.md) —
+    // mayo-c-source is a dead orphaned submodule gitlink and is never used.
+    const createModule = require(resolve(__dirname, '../mayo-cube/mayo.cjs'));
+
     // Set the WASM file location
-    const wasmPath = resolve(__dirname, '../mayo-c-source/mayo.wasm');
+    const wasmPath = resolve(__dirname, '../mayo-cube/mayo.wasm');
     const moduleConfig = {
       locateFile: (file) => {
         if (file.endsWith('.wasm')) {

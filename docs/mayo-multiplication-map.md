@@ -1,9 +1,12 @@
 # MAYO-C Multiplication Site Map
 
 Source: PQCMayo/MAYO-C reference implementation, pinned at commit `4b7cd94`.
-All file paths below are relative to `xid/mayo-c-source/`. This document is a
-pure inventory of matrix/vector/scalar multiplication sites in the signing and
-verification pipelines — no security claims or recommendations are made.
+All file paths below are relative to `xid/mayo-cube/` (the vendored, buildable
+fork at that same pinned commit — `xid/mayo-c-source`, the orphaned submodule
+gitlink this doc originally referenced, has been removed; see
+`xid/mayo-cube/VENDOR.md`). This document is a pure inventory of
+matrix/vector/scalar multiplication sites in the signing and verification
+pipelines — no security claims or recommendations are made.
 
 ## Orientation: MAYO's oil-and-vinegar structure
 

@@ -159,8 +159,8 @@ describe('MAYO WASM Wrapper', () => {
     const __dirname = dirname(__filename);
     const require = createRequire(import.meta.url);
     
-    const createModule = require(resolve(__dirname, '../mayo-c-source/mayo.cjs'));
-    const wasmPath = resolve(__dirname, '../mayo-c-source/mayo.wasm');
+    const createModule = require(resolve(__dirname, '../mayo-cube/mayo.cjs'));
+    const wasmPath = resolve(__dirname, '../mayo-cube/mayo.wasm');
     
     const moduleConfig = {
       locateFile: (file) => {

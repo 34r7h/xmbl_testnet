@@ -8,6 +8,8 @@
   },
   "description": "XMBL's Mayo Signatures",
   "scripts": {
+    "build:wasm": "./build-mayo-cube-wasm.sh",
+    "pretest": "npm run build:wasm",
     "test": "NODE_OPTIONS=--experimental-vm-modules npx jest",
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules npx jest --watch",
     "coverage": "NODE_OPTIONS=--experimental-vm-modules npx jest --coverage"
