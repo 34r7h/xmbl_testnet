@@ -23,11 +23,15 @@ export class XMBLCore {
     // Initialize state machine with ledger integration
     this.xvsm = new StateMachine({
       totalShards: config.stateMachine?.totalShards,
+      dbPath: config.stateMachine?.dbPath,
       xclt: this.xclt
     });
-    
-    // Initialize consensus workflow with integrations
+
+    // Initialize consensus workflow with integrations. Thread the consensus
+    // dbPath so its mempool LevelDB lives under the configured data_dir instead
+    // of leaking to ./data/xpc relative to cwd.
     this.xpc = new ConsensusWorkflow({
+      dbPath: config.consensus?.dbPath,
       xid: this.xid,
       xclt: this.xclt,
       xn: this.xn
@@ -70,9 +74,14 @@ export class XMBLCore {
     if (this.xn) {
       await this.xn.stop();
     }
-    if (this.xclt && this.xclt.db) {
-      await this.xclt.db.close();
-    }
+    // Close EVERY LevelDB cleanly, not just the ledger — otherwise the storage
+    // (xsc) and state-machine (xvsm) databases are left open and a restart can
+    // reopen them mid-flush / with a stale LOCK. close() is the flush for
+    // classic-level; there is no separate flush API.
+    await closeLevelDb(this.xclt && this.xclt.db);
+    await closeLevelDb(this.xvsm && this.xvsm.db);
+    await closeLevelDb(this.xsc && this.xsc.db);
+    await closeLevelDb(this.xpc && this.xpc.mempool && this.xpc.mempool.db);
   }
   
   async createIdentity() {
@@ -95,9 +104,19 @@ export class XMBLCore {
     
     // Broadcast via gossip
     await this.gossip.broadcastRawTransaction('leader1', signedTx);
-    
+
     return rawTxId;
   }
+}
+
+// Close an abstract-level (LevelDB) handle cleanly, tolerating the two shapes
+// that show up in practice: the in-memory Map fallback (xsc when LevelDB is
+// unavailable — no close()), and an already-closed/closing handle (close()
+// throws "Database is not open"). Only a genuinely open handle is flushed+closed.
+async function closeLevelDb(db) {
+  if (!db || typeof db.close !== 'function') return;
+  if (db.status === 'closed' || db.status === 'closing') return;
+  await db.close();
 }
 
 

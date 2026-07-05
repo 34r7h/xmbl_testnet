@@ -1,3 +1,4 @@
+import { describe, it, expect } from '@jest/globals';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import {
@@ -7,9 +8,9 @@ import {
   validateConfig,
   normalizeConfig,
   loadConfig,
-} from '../src/config.js';
+} from '../../core/node-config.js';
 
-const examplePath = fileURLToPath(new URL('../config.example.json', import.meta.url));
+const examplePath = fileURLToPath(new URL('../../config.node.example.json', import.meta.url));
 const docPath = fileURLToPath(new URL('../../docs/node-config.md', import.meta.url));
 
 const roleFields = Object.keys(NODE_CONFIG_SCHEMA.roles.fields);
