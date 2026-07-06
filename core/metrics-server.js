@@ -1,4 +1,5 @@
 import http from 'http';
+import { collectEarnings } from './earnings.js';
 
 /**
  * Health + metrics endpoint for the xmbl-node daemon (A5d).
@@ -43,12 +44,11 @@ export function collectMetrics(core, startTime) {
       tx: mp.tx instanceof Map ? mp.tx.size : 0,
     },
     // Group-E role counters. These are cumulative counters the role workers own;
-    // until E2 lands that has not run, so it is honestly 0 (NOT faked).
     // E1 (validate role) increments validations_completed as its ValidationWorker
     // completes tasks (only when roles.validate is enabled — 0 otherwise).
     validations_completed: core?.validationsCompleted || 0,
-    // E2 (storage role) will increment shards_stored as it persists shards.
-    shards_stored: 0,
+    // E2 (storage role): cumulative shards persisted by the StorageNode.
+    shards_stored: core?.xsc?.shardsStored ?? 0,
     // E3 (compute role): cumulative jobs run by the ComputeNode, only
     // constructed when roles.compute is enabled (core/index.js) — 0 otherwise.
     compute_jobs_run: core?.computeNode?.computeJobsRun ?? 0,
@@ -56,6 +56,9 @@ export function collectMetrics(core, startTime) {
     // addSealedBatch routing, only constructed when roles.lead is enabled
     // (core/index.js) — 0 otherwise.
     lead_batches_sealed: core?.leadBatchesSealed ?? 0,
+    // E5: node earnings ledger — a derived, non-cashable paper-credit view
+    // over the same E1/E2/E3 counters above (see core/earnings.js).
+    earnings: collectEarnings(core),
   };
 }
 
