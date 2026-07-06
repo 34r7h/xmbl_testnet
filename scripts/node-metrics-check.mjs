@@ -31,10 +31,19 @@ fs.writeFileSync(
     data_dir: dataDir,
     listen_addrs: ['/ip4/127.0.0.1/tcp/0'],
     bootstrap_peers: [],
-    roles: { validate: true, storage: false, compute: false, relay: false, lead: false },
+    roles: { validate: true, storage: false, compute: true, relay: false, lead: false },
     resource_caps: { disk_mb: 1024, compute_cpu_ms: 10000, compute_mem_mb: 512 },
   }, null, 2),
 );
+
+// Minimal WASM module exporting "add": (i32, i32) -> i32 — same fixture used
+// by xsc/__tests__/compute-node.test.js.
+const ADD_WASM_B64 = Buffer.from([
+  0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x07, 0x01, 0x60, 0x02,
+  0x7f, 0x7f, 0x01, 0x7f, 0x03, 0x02, 0x01, 0x00, 0x07, 0x07, 0x01, 0x03, 0x61,
+  0x64, 0x64, 0x00, 0x00, 0x0a, 0x09, 0x01, 0x07, 0x00, 0x20, 0x00, 0x20, 0x01,
+  0x6a, 0x0b,
+]).toString('base64');
 
 const children = new Set();
 function startDaemon() {
@@ -124,14 +133,13 @@ async function run() {
   for (const stage of ['raw', 'validation_tasks', 'locked_utxo', 'processing', 'tx']) {
     assert(isNum(m.mempool[stage]), `mempool.${stage} is numeric (${m.mempool[stage]})`);
   }
-  // Before any tx: E1 hasn't run yet, E2/E3 never do in this check — honest 0s.
+  // Before any tx/job: nothing has run yet — honest 0s.
   assert(m.validations_completed === 0 && m.shards_stored === 0 && m.compute_jobs_run === 0,
-    'group-E counters are 0 before any tx (unpopulated, not faked)');
+    'group-E counters are 0 before any tx/job (unpopulated, not faked)');
 
-  // E1 acceptance: submit_tx (roles.validate: true above) must produce a
-  // validation task addressed back to this node's own identity and this
-  // node's ValidationWorker must claim + complete it — validations_completed
-  // rises. shards_stored/compute_jobs_run stay 0 (E2/E3 not implemented yet).
+  // E1 acceptance: submit_tx (roles.validate: true) produces a validation task
+  // addressed back to this node's own identity; its ValidationWorker claims +
+  // completes it — validations_completed rises. compute/storage still 0 here.
   const submitResult = await sockCall('submit_tx', { tx: { to: 'bob', amount: 1.23 } }, 8000);
   assert(submitResult.ok === true, `submit_tx succeeds (${JSON.stringify(submitResult)})`);
 
@@ -143,7 +151,25 @@ async function run() {
   assert(afterTx.validations_completed > 0,
     `validations_completed rose after submit_tx (${afterTx.validations_completed})`);
   assert(afterTx.shards_stored === 0 && afterTx.compute_jobs_run === 0,
-    'E2/E3 counters remain honest 0 (not implemented yet)');
+    'compute/storage counters still honest 0 before compute runs');
+
+  // E3 acceptance: a job within resource_caps (roles.compute: true) runs and
+  // compute_jobs_run rises; a refused job (missing required fields) does NOT.
+  const goodJob = await sockCall('compute_job', {
+    job: { jobId: 'e3-check-1', wasmCode: ADD_WASM_B64, functionName: 'add', args: [2, 3] },
+  });
+  assert(goodJob.ok === true && goodJob.result === 5, `compute_job runs within caps (${JSON.stringify(goodJob)})`);
+
+  const afterGood = (await httpGetJson(url)).json;
+  assert(afterGood.compute_jobs_run === 1, `compute_jobs_run rose after a within-caps job (${afterGood.compute_jobs_run})`);
+
+  const badJob = await sockCall('compute_job', { job: { jobId: 'e3-check-2' } });
+  assert(badJob.ok === false, `malformed/refused compute_job returns ok:false (${JSON.stringify(badJob)})`);
+
+  const afterBad = (await httpGetJson(url)).json;
+  assert(afterBad.compute_jobs_run === 1, 'a refused compute_job does NOT increment compute_jobs_run');
+  assert(afterBad.validations_completed > 0 && afterBad.shards_stored === 0,
+    'E1 validations persisted (validate ran first), E2 storage honest 0');
 
   // loopback-only: the endpoint must NOT be reachable on a routable LAN address.
   // (Connecting to 0.0.0.0 is ambiguous/loopback on many OSes, so probe a real
