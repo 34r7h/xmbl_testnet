@@ -26,7 +26,7 @@
     "swarm:logs": "docker compose -f docker-compose.swarm.yml logs -f",
     "build": "vite build",
     "preview": "vite preview",
-    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js --forceExit",
     "lint": "eslint . --ext .js",
     "format": "prettier --write \"**/*.{js,json,md}\"",
     "audit": "npm audit",

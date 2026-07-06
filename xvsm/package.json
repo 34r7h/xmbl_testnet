@@ -8,7 +8,7 @@
   },
   "description": "XMBL Virtual State Machine",
   "scripts": {
-    "test": "NODE_OPTIONS=--experimental-vm-modules npx jest"
+    "test": "NODE_OPTIONS=--experimental-vm-modules npx jest --forceExit"
   },
   "dependencies": {
     "level": "^10.0.0",

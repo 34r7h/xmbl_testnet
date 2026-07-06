@@ -8,7 +8,7 @@
   },
   "description": "XMBL Peer Consensus",
   "scripts": {
-    "test": "NODE_OPTIONS=--experimental-vm-modules npx jest"
+    "test": "NODE_OPTIONS=--experimental-vm-modules npx jest --forceExit"
   },
   "dependencies": {
     "@types/jest": "^30.0.0",

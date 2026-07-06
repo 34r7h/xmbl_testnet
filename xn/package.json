@@ -8,7 +8,7 @@
   },
   "description": "XMBL Networking",
   "scripts": {
-    "test": "NODE_OPTIONS=--experimental-vm-modules npx jest",
+    "test": "NODE_OPTIONS=--experimental-vm-modules npx jest --forceExit",
     "coverage": "NODE_OPTIONS=--experimental-vm-modules npx jest --coverage"
   },
   "keywords": [],

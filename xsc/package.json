@@ -17,6 +17,6 @@
     "jest": "^30.2.0"
   },
   "scripts": {
-    "test": "NODE_OPTIONS=--experimental-vm-modules npx jest"
+    "test": "NODE_OPTIONS=--experimental-vm-modules npx jest --forceExit"
   }
 }
