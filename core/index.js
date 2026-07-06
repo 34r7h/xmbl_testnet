@@ -4,6 +4,7 @@ import { Ledger } from 'xclt';
 import { StateMachine } from 'xvsm';
 import { ConsensusWorkflow, ConsensusGossip, ValidationWorker } from 'xpc';
 import { StorageNode, MarketPricing, ComputeNode } from 'xsc';
+import { LeadWorker } from './lead-worker.js';
 
 export class XMBLCore {
   constructor(config = {}) {
@@ -11,23 +12,32 @@ export class XMBLCore {
 
     // Initialize network first
     this.xn = new XNNode(config.network || {});
-    
+
     // Initialize identity system
     this.xid = null; // Will be set when identity is created
-    
+
     // Initialize ledger with network integration
     this.xclt = new Ledger({
       dbPath: config.ledger?.dbPath,
       xn: this.xn,
       xid: this.xid
     });
-    
+
     // Initialize state machine with ledger integration
     this.xvsm = new StateMachine({
       totalShards: config.stateMachine?.totalShards,
       dbPath: config.stateMachine?.dbPath,
       xclt: this.xclt
     });
+
+    // E4 (lead role): opt-in via roles.lead. Constructed HERE (not in
+    // start(), unlike E1/E3) because ConsensusWorkflow's tx:finalized
+    // listener — wired in its own constructor, right below — needs the
+    // batchSealer callback at construction time, not after.
+    this.leadBatchesSealed = 0;
+    this.leadWorker = this.config.roles?.lead
+      ? new LeadWorker({ xclt: this.xclt, onBatchSealed: (n) => { this.leadBatchesSealed += n; } })
+      : null;
 
     // Initialize consensus workflow with integrations. Thread the consensus
     // dbPath so its mempool LevelDB lives under the configured data_dir instead
@@ -36,8 +46,18 @@ export class XMBLCore {
       dbPath: config.consensus?.dbPath,
       xid: this.xid,
       xclt: this.xclt,
-      xn: this.xn
+      xn: this.xn,
+      batchSealer: this.leadWorker ? (txData) => this.leadWorker.handleFinalizedTx(txData) : null,
     });
+
+    // Now that xpc exists, wire the lead worker's OTHER job: driving
+    // tx:processing -> finalizeTransaction. Nothing else in the daemon calls
+    // finalizeTransaction (only xsim's simulator does, standing in for a
+    // leader in local dev sims) — without this, a lead node's own processed
+    // txs would sit unfinalized forever.
+    if (this.leadWorker) {
+      this.leadWorker.start(this.xpc);
+    }
 
     // Gossip is constructed after xn.start() (see start()) — its constructor
     // only subscribes to its topic if xn.started is already true, and xn is
@@ -113,6 +133,9 @@ export class XMBLCore {
   async stop() {
     if (this.validationWorker) {
       this.validationWorker.stop();
+    }
+    if (this.leadWorker) {
+      this.leadWorker.stop();
     }
     if (this.xn) {
       await this.xn.stop();
