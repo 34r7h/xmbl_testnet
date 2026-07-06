@@ -22,9 +22,21 @@ export class Face {
       return; // Block already exists, skip
     }
     
-    // Skip if face already has 9 blocks
-    if (this.pendingBlocks.length >= 9) {
-      return; // Face is full
+    // Reject an add to a FULL face EXPLICITLY (D3a hardening). Previously this
+    // was a bare `return`, so a caller could not tell an accepted add from a
+    // silently-dropped one. A face is full either while still accumulating
+    // (pendingBlocks at 9) OR once it has been hash-sorted into positions
+    // (blocks.size === 9, at which point pendingBlocks has been CLEARED — so the
+    // old `pendingBlocks.length >= 9` check missed a sealed face and silently
+    // accumulated orphan blocks into a completed face). Return an explicit falsy
+    // rejection value: a normal accepted add still returns undefined (see
+    // parallel-cube.test.js "no conflict-resolution return value"), and callers
+    // that ignore the result (e.g. the 12-blocks-cap-at-9 test) are unaffected —
+    // the face still holds exactly 9. A rejection VALUE rather than a throw is
+    // deliberate: throwing would break that cap test and callers that treat
+    // overflow as benign.
+    if (this.blocks.size >= 9 || this.pendingBlocks.length >= 9) {
+      return false; // face is full — block not added
     }
     
     // Add block to pending list

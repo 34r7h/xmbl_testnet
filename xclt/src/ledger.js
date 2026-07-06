@@ -5,6 +5,7 @@ import { Face } from './face.js';
 import { Cube } from './cube.js';
 import { SuperCube } from './super-cube.js';
 import { sortFacesByHash } from './placement.js';
+import { sealBlocksIntoFaces } from './face-sealing.js';
 import { Level } from 'level';
 
 export class Ledger extends EventEmitter {
@@ -21,6 +22,10 @@ export class Ledger extends EventEmitter {
     this.superCubes = new Map(); // level -> Map<cubeTimestamp, SuperCube> (keyed by timestamp)
     this.completedCubesByLevel = new Map(); // level -> Array<Cube> - tracks completed cubes at each level for recursive formation
     this.pendingFacesByLevel = new Map(); // level -> Map<faceTimestamp, Face> - tracks pending faces at each level
+    // D3a: pool of blocks awaiting DETERMINISTIC face-membership sealing (used by
+    // addSealedBatch, NOT the legacy incremental addTransaction path). Blocks
+    // accumulate here until sealReadyFaces() partitions them by global hash-sort.
+    this._membershipPool = [];
     
     // Integration: xid for signature verification
     this.xid = options.xid || null;
@@ -247,7 +252,101 @@ export class Ledger extends EventEmitter {
       fractalAddress: block.getFractalAddress()
     };
   }
-  
+
+  /**
+   * D3a — DETERMINISTIC face-membership entry point.
+   *
+   * Add a batch of transactions whose face MEMBERSHIP is sealed as a pure
+   * function of the transaction SET (global hash-sort → chunk-9), NOT of local
+   * arrival order. Two ledgers given the same set of transactions in different
+   * orders converge to identical face/cube merkle roots — the property the
+   * legacy incremental addTransaction lacks (see face-sealing.js for the why).
+   *
+   * Blocks accumulate in a pool; every full group of 9 (by hash) is sealed into
+   * a face and fed through the SAME cube-formation pipeline the incremental path
+   * uses (_finalizeFace → cube → recursive growth). A remainder of < 9 stays
+   * pooled for the next batch. Signature verification mirrors addTransaction.
+   *
+   * SEAL BOUNDARY: this seals every full-9 available in the current pool at call
+   * time. Agreeing on that boundary across nodes live (consensus/leader sealing)
+   * is the deferred follow-up (2b, gated on G2b). For a fixed set fed to two
+   * ledgers, the partition is identical regardless of add order — which is
+   * exactly what the convergence test asserts.
+   *
+   * @param {Array<object>} txs - transactions to add and seal
+   * @returns {Promise<{sealedFaces: number, pooled: number}>}
+   */
+  async addSealedBatch(txs) {
+    if (!Array.isArray(txs)) {
+      throw new Error('addSealedBatch: txs must be an array');
+    }
+    for (const tx of txs) {
+      // Mirror addTransaction's optional signature verification.
+      if (this.xid && tx.sig && tx.from) {
+        try {
+          let publicKey = null;
+          if (this.getPublicKeyByAddress && typeof this.getPublicKeyByAddress === 'function') {
+            publicKey = await this.getPublicKeyByAddress(tx.from);
+          }
+          if (publicKey) {
+            const isValid = await this.xid.verify(tx, tx.sig, publicKey);
+            if (!isValid) {
+              throw new Error(`Invalid signature for transaction from ${tx.from}`);
+            }
+          }
+        } catch (error) {
+          if (error.code !== 'ERR_MODULE_NOT_FOUND' && !error.message.includes('Base64')) {
+            throw error;
+          }
+        }
+      }
+      const block = Block.fromTransaction(tx);
+      this.blocks.set(block.id, block);
+      this._membershipPool.push(block);
+    }
+    return this._sealReadyFaces();
+  }
+
+  /**
+   * Seal every full group of 9 currently in the membership pool into faces
+   * (deterministic hash-sort partition) and feed each through the cube pipeline.
+   * Idempotent w.r.t. a remainder: a pool of < 9 seals nothing and stays pooled.
+   * @private
+   * @returns {Promise<{sealedFaces: number, pooled: number}>}
+   */
+  async _sealReadyFaces() {
+    const { faces, leftover } = sealBlocksIntoFaces(this._membershipPool);
+    this._membershipPool = leftover;
+
+    for (const face of faces) {
+      // Establish an initial location for each sealed block so coordinates are
+      // valid before finalize (mirrors addTransaction). Face index is temporary
+      // (0) until the cube is finalized; positions are the hash-sorted 0-8 the
+      // seal already assigned.
+      for (const [position, block] of face.blocks.entries()) {
+        block.setLocation({
+          faceIndex: 0,
+          position,
+          cubeIndex: 0,
+          cubeSequentialIndex: null,
+          level: 1,
+        });
+      }
+      // Persist each sealed block (parity with the incremental path).
+      if (this._dbOpen) {
+        for (const block of face.blocks.values()) {
+          try { await this.db.put(`block:${block.id}`, block.serialize()); } catch { /* in-memory fallback */ }
+        }
+      }
+      // Feed the sealed face into the existing cube-formation pipeline. Merkle
+      // roots are pure functions of block membership + hash-sort, so the cube
+      // this produces is byte-identical across nodes for the same set.
+      await this._finalizeFace(face);
+    }
+
+    return { sealedFaces: faces.length, pooled: this._membershipPool.length };
+  }
+
   async _handleIncomingBlock(data) {
     // Handle incoming block from network
     if (data.blockId && data.block) {
