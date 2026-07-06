@@ -13,20 +13,27 @@ export class Identity {
    * @param {string} publicKey - Base64-encoded MAYO public key
    * @param {string} privateKey - Base64-encoded MAYO private key
    */
-  constructor(publicKey, privateKey) {
+  constructor(publicKey, privateKey, scheme = 'mayo') {
     this.publicKey = publicKey;
     this.privateKey = privateKey;
     this.address = this._deriveAddress(publicKey);
+    // Signature scheme this identity's keypair belongs to. Threaded into
+    // signTransaction so the sign path uses the matching WASM artifact. Default
+    // 'mayo' keeps every existing caller unchanged.
+    this.scheme = scheme;
   }
 
   /**
    * Create a new identity with generated keypair
    * @returns {Promise<Identity>} New identity instance
    */
-  static async create() {
-    const mayo = await MAYOWasm.load();
+  static async create(opts = {}) {
+    // opts.scheme selects the signature scheme (default 'mayo'). Keygen loads the
+    // matching WASM artifact; the identity remembers its scheme so signing uses it.
+    const scheme = typeof opts === 'string' ? opts : (opts.scheme || 'mayo');
+    const mayo = await MAYOWasm.load(scheme);
     const keypair = await mayo.keygen();
-    return new Identity(keypair.publicKey, keypair.privateKey);
+    return new Identity(keypair.publicKey, keypair.privateKey, scheme);
   }
 
   /**
@@ -107,8 +114,8 @@ export class Identity {
     const message = JSON.stringify(txWithoutSig);
     const messageBytes = new TextEncoder().encode(message);
     // Route through the ONE signer seam (xid/src/signer.js) — do not call the
-    // signature primitive directly here.
-    const signature = await signerSign(messageBytes, this.privateKey);
+    // signature primitive directly here. Sign under this identity's scheme.
+    const signature = await signerSign(messageBytes, this.privateKey, this.scheme);
     // Return transaction with signature, but NO publicKey
     return { ...txWithAddress, sig: signature };
   }
@@ -117,19 +124,22 @@ export class Identity {
    * Verify a signed transaction and check that signer owns the from address
    * @param {Object} signedTx - Signed transaction object (must have sig and from fields)
    * @param {string} publicKey - Base64-encoded public key to verify signature
+   * @param {{scheme?:string}|string} [opts] - signature scheme (default 'mayo'); must
+   *   match the scheme the signature was produced under. Omitted → default, so
+   *   every existing caller is unchanged.
    * @returns {Promise<boolean>} True if signature is valid AND public key derives to from address
    */
-  static async verifyTransaction(signedTx, publicKey) {
+  static async verifyTransaction(signedTx, publicKey, opts) {
     if (!signedTx.sig || !signedTx.from) {
       return false;
     }
-    
+
     const { sig, ...txWithoutSig } = signedTx;
     const message = JSON.stringify(txWithoutSig);
     const messageBytes = new TextEncoder().encode(message);
 
     // Verify signature through the ONE signer seam (xid/src/signer.js).
-    const isValidSig = await signerVerify(messageBytes, sig, publicKey);
+    const isValidSig = await signerVerify(messageBytes, sig, publicKey, opts);
     if (!isValidSig) {
       return false;
     }

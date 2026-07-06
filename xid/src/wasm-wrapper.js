@@ -1,14 +1,17 @@
 // MAYO WASM Wrapper
 // Wraps the Emscripten-compiled MAYO C implementation
 
+import { resolveScheme, DEFAULT_SCHEME } from './wasm-schemes.js';
+
 // MAYO_1 constants
 const CRYPTO_SECRETKEYBYTES = 24;
 const CRYPTO_PUBLICKEYBYTES = 1420;
 const CRYPTO_BYTES = 454;
 
 export class MAYOWasm {
-  constructor(module) {
+  constructor(module, scheme = DEFAULT_SCHEME) {
     this.module = module;
+    this.scheme = scheme;
     
     // Wrap C functions - using namespaced function names (MAYO_1 opt build)
     // Try direct access first, fallback to cwrap
@@ -29,23 +32,30 @@ export class MAYOWasm {
     }
   }
 
-  static async load() {
-    // Load WASM module
-    // The mayo.cjs file is a CommonJS module that creates a Module object
-    const { createRequire } = await import('module');
-    const { fileURLToPath } = await import('url');
-    const { dirname, resolve } = await import('path');
-    const __filename = fileURLToPath(import.meta.url);
-    const __dirname = dirname(__filename);
-    const require = createRequire(import.meta.url);
-    
-    // Load the CommonJS module - it exports createModule function
-    // mayo-cube is our vendored, buildable fork (see mayo-cube/VENDOR.md) —
-    // mayo-c-source is a dead orphaned submodule gitlink and is never used.
-    const createModule = require(resolve(__dirname, '../mayo-cube/mayo.cjs'));
+  /**
+   * Load the MAYO WASM instance for a signature scheme (a fresh module per call,
+   * as before F5 — no caching is introduced here).
+   *
+   * The scheme selects WHICH artifact to load, via the pure resolver in
+   * wasm-schemes.js. Passing no scheme uses DEFAULT_SCHEME ('mayo') and resolves
+   * to the exact artifact loaded before F5 — so existing callers are unchanged.
+   *
+   * @param {string} [scheme=DEFAULT_SCHEME] - one of KNOWN_SCHEMES
+   * @returns {Promise<MAYOWasm>}
+   */
+  static async load(scheme = DEFAULT_SCHEME) {
+    // Resolve the scheme to its artifact paths (throws clearly on unknown scheme).
+    // Default scheme resolves to the exact artifact loaded before F5, so the
+    // default path is unchanged — a fresh module per call, as before.
+    const { cjsPath, wasmPath } = resolveScheme(scheme);
 
-    // Set the WASM file location
-    const wasmPath = resolve(__dirname, '../mayo-cube/mayo.wasm');
+    // Load the CommonJS module - it exports createModule function.
+    // cjsPath/wasmPath MUST come from resolveScheme(scheme) above — do NOT
+    // hardcode a path here, or the scheme swap silently loads the wrong artifact.
+    const { createRequire } = await import('module');
+    const require = createRequire(import.meta.url);
+    const createModule = require(cjsPath);
+
     const moduleConfig = {
       locateFile: (file) => {
         if (file.endsWith('.wasm')) {
@@ -54,14 +64,14 @@ export class MAYOWasm {
         return file;
       }
     };
-    
+
     // Call createModule to get the module instance
     const mayoModule = await createModule(moduleConfig);
-    
+
     // If it's a promise, wait for it
     const module = mayoModule instanceof Promise ? await mayoModule : mayoModule;
-    
-    return new MAYOWasm(module);
+
+    return new MAYOWasm(module, scheme);
   }
 
   async keygen() {
