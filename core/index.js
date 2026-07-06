@@ -3,10 +3,12 @@ import { XNNode } from 'xn';
 import { Ledger } from 'xclt';
 import { StateMachine } from 'xvsm';
 import { ConsensusWorkflow, ConsensusGossip } from 'xpc';
-import { StorageNode, MarketPricing } from 'xsc';
+import { StorageNode, MarketPricing, ComputeNode } from 'xsc';
 
 export class XMBLCore {
   constructor(config = {}) {
+    this.config = config;
+
     // Initialize network first
     this.xn = new XNNode(config.network || {});
     
@@ -42,6 +44,11 @@ export class XMBLCore {
     // never started yet at this point in the constructor.
     this.gossip = null;
 
+    // E3 (compute role): constructed after xn.start() too, for the same
+    // reason — its xn-topic subscription only takes effect if xn.started is
+    // already true. Opt-in via roles.compute (see start()).
+    this.computeNode = null;
+
     // Initialize storage and compute
     this.pricing = new MarketPricing();
     this.xsc = new StorageNode({
@@ -62,6 +69,17 @@ export class XMBLCore {
     this.gossip = new ConsensusGossip({
       xn: this.xn
     });
+
+    // E3: opt-in (roles.compute) compute-provider role. Same xn.started
+    // requirement as gossip above — construct it here, not in the
+    // constructor, so its job-request topic subscription actually takes.
+    if (this.config.roles?.compute) {
+      this.computeNode = new ComputeNode({
+        xn: this.xn,
+        maxTime: this.config.compute?.cpuMs,
+        maxMemory: (this.config.compute?.memMb ?? 512) * 1024 * 1024,
+      });
+    }
 
     // Create default identity if needed
     if (!this.xid) {

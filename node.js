@@ -83,7 +83,14 @@ function toCoreConfig(cfg, dataDir) {
     stateMachine: { dbPath: path.join(dataDir, 'xvsm'), totalShards: 4 },
     consensus: { dbPath: path.join(dataDir, 'xpc') },
     storage: { dbPath: path.join(dataDir, 'storage'), capacity: cfg.resource_caps.disk_mb * 1024 * 1024 },
+    // E3: this node's own compute-job caps (A5a resource_caps), read by
+    // XMBLCore.start() when constructing the opt-in ComputeNode.
+    compute: { cpuMs: cfg.resource_caps.compute_cpu_ms, memMb: cfg.resource_caps.compute_mem_mb },
     logging: { level: 'info' },
+    // group-E role opt-ins (E3's compute worker reads roles.compute; see
+    // XMBLCore.start()). A5b left these passed-through/recorded only — this
+    // is group-E actually gating a subsystem on them.
+    roles: cfg.roles,
   };
 }
 

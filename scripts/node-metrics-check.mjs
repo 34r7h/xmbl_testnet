@@ -31,10 +31,19 @@ fs.writeFileSync(
     data_dir: dataDir,
     listen_addrs: ['/ip4/127.0.0.1/tcp/0'],
     bootstrap_peers: [],
-    roles: { validate: true, storage: false, compute: false, relay: false, lead: false },
+    roles: { validate: false, storage: false, compute: true, relay: false, lead: false },
     resource_caps: { disk_mb: 1024, compute_cpu_ms: 10000, compute_mem_mb: 512 },
   }, null, 2),
 );
+
+// Minimal WASM module exporting "add": (i32, i32) -> i32 — same fixture used
+// by xsc/__tests__/compute-node.test.js.
+const ADD_WASM_B64 = Buffer.from([
+  0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x07, 0x01, 0x60, 0x02,
+  0x7f, 0x7f, 0x01, 0x7f, 0x03, 0x02, 0x01, 0x00, 0x07, 0x07, 0x01, 0x03, 0x61,
+  0x64, 0x64, 0x00, 0x00, 0x0a, 0x09, 0x01, 0x07, 0x00, 0x20, 0x00, 0x20, 0x01,
+  0x6a, 0x0b,
+]).toString('base64');
 
 const children = new Set();
 function startDaemon() {
@@ -48,14 +57,14 @@ function runCmd(cmd) {
     execFile(NODE, [DAEMON, cmd, '--config', cfgPath], { env: CHILD_ENV }, (err) => resolve(err ? (err.code ?? 1) : 0));
   });
 }
-function sockCall(op, timeoutMs = 8000) {
+function sockCall(op, args = {}, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
     const sock = net.connect(sockPath);
     let buf = '';
     let done = false;
     const fail = (e) => { if (done) return; done = true; try { sock.destroy(); } catch {} reject(e); };
     const timer = setTimeout(() => fail(new Error(`${op} timeout`)), timeoutMs);
-    sock.on('connect', () => sock.write(JSON.stringify({ op }) + '\n'));
+    sock.on('connect', () => sock.write(JSON.stringify({ op, ...args }) + '\n'));
     sock.on('data', (d) => {
       buf += d;
       const i = buf.indexOf('\n');
@@ -114,9 +123,31 @@ async function run() {
   for (const stage of ['raw', 'validation_tasks', 'locked_utxo', 'processing', 'tx']) {
     assert(isNum(m.mempool[stage]), `mempool.${stage} is numeric (${m.mempool[stage]})`);
   }
-  // E-role counters are honestly 0 until E1/E2/E3 land (not faked nonzero)
+  // Before any compute job: E1/E2 haven't run in this check (roles.validate/
+  // storage are off above) and E3 hasn't run yet either — honest 0s.
   assert(m.validations_completed === 0 && m.shards_stored === 0 && m.compute_jobs_run === 0,
-    'group-E counters are 0 (unpopulated, not faked)');
+    'group-E counters are 0 before any compute job (unpopulated, not faked)');
+
+  // E3 acceptance: a job within this node's resource_caps (roles.compute:
+  // true above) runs and compute_jobs_run rises; a refused job (here: one
+  // missing required fields — the same clean-refusal path an over-cap job
+  // takes, see xsc/__tests__/compute-node.test.js for the over-cap-specific
+  // cases) does NOT increment it.
+  const goodJob = await sockCall('compute_job', {
+    job: { jobId: 'e3-check-1', wasmCode: ADD_WASM_B64, functionName: 'add', args: [2, 3] },
+  });
+  assert(goodJob.ok === true && goodJob.result === 5, `compute_job runs within caps (${JSON.stringify(goodJob)})`);
+
+  const afterGood = (await httpGetJson(url)).json;
+  assert(afterGood.compute_jobs_run === 1, `compute_jobs_run rose after a within-caps job (${afterGood.compute_jobs_run})`);
+
+  const badJob = await sockCall('compute_job', { job: { jobId: 'e3-check-2' } });
+  assert(badJob.ok === false, `malformed/refused compute_job returns ok:false (${JSON.stringify(badJob)})`);
+
+  const afterBad = (await httpGetJson(url)).json;
+  assert(afterBad.compute_jobs_run === 1, 'a refused compute_job does NOT increment compute_jobs_run');
+  assert(afterBad.validations_completed === 0 && afterBad.shards_stored === 0,
+    'E1/E2 counters remain honest 0 (not implemented/enabled in this check)');
 
   // loopback-only: the endpoint must NOT be reachable on a routable LAN address.
   // (Connecting to 0.0.0.0 is ambiguous/loopback on many OSes, so probe a real

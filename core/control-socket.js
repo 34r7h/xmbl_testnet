@@ -18,7 +18,7 @@ import fs from 'fs';
  *   unknown:  { ok: false, error: "unknown op" }
  * Bad JSON on a line is ignored (matches the coordinator).
  *
- * Ops: status, peers, wallet, submit_tx, roles. Every op is a single
+ * Ops: status, peers, wallet, submit_tx, compute_job, roles. Every op is a single
  * request/reply (no waiter-hold pattern). Every handler is wrapped so a throw
  * or rejection becomes a JSON error — the daemon must never crash or hang on a
  * control request.
@@ -70,6 +70,18 @@ export function createControlServer({ core, config, sockPath, statusSnapshot }) 
         // Guarded + time-boxed so a control request can never hang the daemon.
         const txId = await withTimeout(core.submitTransaction(req.tx), SUBMIT_TIMEOUT_MS, 'submit_tx');
         return { ok: true, tx_id: txId };
+      }
+      case 'compute_job': {
+        if (!core.computeNode) {
+          return { ok: false, error: 'compute role not enabled (roles.compute)' };
+        }
+        if (!req.job || typeof req.job !== 'object') {
+          return { ok: false, error: 'compute_job requires a job object' };
+        }
+        // Guarded + time-boxed so a control request can never hang the daemon
+        // even if runJob's own cap enforcement somehow didn't (defense in depth).
+        const result = await withTimeout(core.computeNode.runJob(req.job), SUBMIT_TIMEOUT_MS, 'compute_job');
+        return result;
       }
       default:
         return { ok: false, error: 'unknown op' };
