@@ -256,11 +256,13 @@ class XMBLCore {
     // Sign transaction
     const signedTx = await this.xid.signTransaction(transaction);
     
-    // Submit to consensus
-    const rawTxId = await this.xpc.submitTransaction('leader1', signedTx);
-    
+    // Submit to consensus under this node's own stable identity, so E1's
+    // user-as-validator task assignment ("back to the identity that
+    // submitted it") has a real address to assign to.
+    const rawTxId = await this.xpc.submitTransaction(this.currentAddress, signedTx);
+
     // Broadcast via gossip
-    await this.gossip.broadcastRawTransaction('leader1', signedTx);
+    await this.gossip.broadcastRawTransaction(this.currentAddress, signedTx);
     
     // Add to ledger
     await this.xclt.addTransaction(signedTx);

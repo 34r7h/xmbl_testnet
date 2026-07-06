@@ -2,11 +2,13 @@ import { Identity } from 'xid';
 import { XNNode } from 'xn';
 import { Ledger } from 'xclt';
 import { StateMachine } from 'xvsm';
-import { ConsensusWorkflow, ConsensusGossip } from 'xpc';
+import { ConsensusWorkflow, ConsensusGossip, ValidationWorker } from 'xpc';
 import { StorageNode, MarketPricing } from 'xsc';
 
 export class XMBLCore {
   constructor(config = {}) {
+    this.config = config;
+
     // Initialize network first
     this.xn = new XNNode(config.network || {});
     
@@ -42,6 +44,11 @@ export class XMBLCore {
     // never started yet at this point in the constructor.
     this.gossip = null;
 
+    // E1 (validate role): honest 0 until the validate role is enabled and a
+    // validation actually completes — see metrics-server.js's collectMetrics.
+    this.validationsCompleted = 0;
+    this.validationWorker = null;
+
     // Initialize storage and compute
     this.pricing = new MarketPricing();
     this.xsc = new StorageNode({
@@ -70,13 +77,28 @@ export class XMBLCore {
       this.xclt.xid = this.xid;
       this.xpc.xid = this.xid;
     }
-    
+
+    // E1: opt-in (roles.validate) worker that claims + completes this node's
+    // own validation tasks (user-as-validator). Needs this.xid.address, so it
+    // starts after identity is resolved above.
+    if (this.config.roles?.validate) {
+      this.validationWorker = new ValidationWorker({
+        workflow: this.xpc,
+        identityAddress: this.xid.address,
+        onValidationCompleted: () => { this.validationsCompleted += 1; },
+      });
+      this.validationWorker.start();
+    }
+
     console.log('XMBL Core started');
     console.log(`Network node: ${this.xn.getPeerId()}`);
     console.log(`Identity: ${this.xid.address}`);
   }
   
   async stop() {
+    if (this.validationWorker) {
+      this.validationWorker.stop();
+    }
     if (this.xn) {
       await this.xn.stop();
     }
@@ -117,12 +139,14 @@ export class XMBLCore {
     }
     
     const signedTx = await this.xid.signTransaction(tx);
-    
-    // Submit to consensus
-    const rawTxId = await this.xpc.submitTransaction('leader1', signedTx);
-    
+
+    // Submit to consensus under this node's own stable identity, so E1's
+    // user-as-validator task assignment ("back to the identity that
+    // submitted it") has a real address to assign to.
+    const rawTxId = await this.xpc.submitTransaction(this.xid.address, signedTx);
+
     // Broadcast via gossip
-    await this.gossip.broadcastRawTransaction('leader1', signedTx);
+    await this.gossip.broadcastRawTransaction(this.xid.address, signedTx);
 
     return rawTxId;
   }

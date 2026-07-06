@@ -3,13 +3,15 @@ import { LeaderElection } from './src/leader-election.js';
 import { Mempool } from './src/mempool.js';
 import { ValidationTaskManager } from './src/validation-tasks.js';
 import { ConsensusGossip } from './src/gossip.js';
+import { ValidationWorker } from './src/validation-worker.js';
 
 export {
   ConsensusWorkflow,
   LeaderElection,
   Mempool,
   ValidationTaskManager,
-  ConsensusGossip
+  ConsensusGossip,
+  ValidationWorker
 };
 
 const port = process.env.PORT || 3004;

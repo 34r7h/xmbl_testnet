@@ -38,5 +38,9 @@ export class ValidationTaskManager {
     const tasks = this.getTasksForLeader(leaderId);
     return tasks.find(t => t.task === taskId);
   }
+
+  getKnownLeaderIds() {
+    return Array.from(this.tasks.keys());
+  }
 }
 

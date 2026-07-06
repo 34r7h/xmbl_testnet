@@ -84,6 +84,10 @@ function toCoreConfig(cfg, dataDir) {
     consensus: { dbPath: path.join(dataDir, 'xpc') },
     storage: { dbPath: path.join(dataDir, 'storage'), capacity: cfg.resource_caps.disk_mb * 1024 * 1024 },
     logging: { level: 'info' },
+    // group-E role opt-ins (E1's validate worker reads roles.validate; see
+    // XMBLCore.start()). A5b left these passed-through/recorded only — this is
+    // group-E actually gating a subsystem on them.
+    roles: cfg.roles,
   };
 }
 

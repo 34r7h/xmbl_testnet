@@ -43,9 +43,10 @@ export function collectMetrics(core, startTime) {
       tx: mp.tx instanceof Map ? mp.tx.size : 0,
     },
     // Group-E role counters. These are cumulative counters the role workers own;
-    // until E1/E2/E3 land they have not run, so they are honestly 0 (NOT faked).
-    // E1 (validate role) will increment validations_completed as it validates txs.
-    validations_completed: 0,
+    // until E2/E3 land those two have not run, so they are honestly 0 (NOT faked).
+    // E1 (validate role) increments validations_completed as its ValidationWorker
+    // completes tasks (only when roles.validate is enabled — 0 otherwise).
+    validations_completed: core?.validationsCompleted || 0,
     // E2 (storage role) will increment shards_stored as it persists shards.
     shards_stored: 0,
     // E3 (compute role) will increment compute_jobs_run as it runs compute jobs.
