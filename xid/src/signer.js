@@ -32,14 +32,29 @@ function toMessageBytes(message) {
   throw new Error('signer: message must be a Uint8Array, Buffer, or string');
 }
 
+// Normalize a scheme option: accept either a bare string ('mayo') or an options
+// object ({scheme}). Undefined → the default scheme. This keeps the pre-F5
+// two-arg sign(message, secretKey) / three-arg verify(...) callsites unchanged
+// (they pass no scheme, so they route to the default), while letting F-group
+// callers select a scheme without any other signature change.
+function schemeOf(opts) {
+  if (opts === undefined || opts === null) return SIGNER_SCHEME;
+  if (typeof opts === 'string') return opts;
+  if (typeof opts === 'object' && opts.scheme !== undefined) return opts.scheme;
+  return SIGNER_SCHEME;
+}
+
 /**
  * Construct a signature over `message` with `secretKey`.
  * @param {Uint8Array|Buffer|string} message
  * @param {string} secretKey - base64 MAYO secret key
+ * @param {{scheme?:string}|string} [opts] - signature scheme (default 'mayo').
+ *   Selecting a scheme loads the matching WASM artifact BEHIND this seam; no
+ *   caller that omits it is affected.
  * @returns {Promise<string>} signature
  */
-export async function sign(message, secretKey) {
-  const mayo = await MAYOWasm.load();
+export async function sign(message, secretKey, opts) {
+  const mayo = await MAYOWasm.load(schemeOf(opts));
   return mayo.sign(toMessageBytes(message), secretKey);
 }
 
@@ -48,21 +63,29 @@ export async function sign(message, secretKey) {
  * @param {Uint8Array|Buffer|string} message
  * @param {string} signature
  * @param {string} publicKey - base64 MAYO public key
+ * @param {{scheme?:string}|string} [opts] - signature scheme (default 'mayo').
+ *   Must match the scheme the signature was produced under. The scheme is NOT
+ *   embedded in the signed payload (that would change the signature format and
+ *   break existing signatures), so the caller supplies it explicitly.
  * @returns {Promise<boolean>}
  */
-export async function verify(message, signature, publicKey) {
-  const mayo = await MAYOWasm.load();
+export async function verify(message, signature, publicKey, opts) {
+  const mayo = await MAYOWasm.load(schemeOf(opts));
   return mayo.verify(toMessageBytes(message), signature, publicKey);
 }
 
 /**
  * Construct a scheme-tagged signature envelope. Forward hook for callers that
  * want to persist which scheme produced the signature; does not change the bytes
- * that are signed.
+ * that are signed. The reported scheme is the one actually used.
+ * @param {Uint8Array|Buffer|string} message
+ * @param {string} secretKey
+ * @param {{scheme?:string}|string} [opts] - signature scheme (default 'mayo')
  * @returns {Promise<{scheme:string, sig:string}>}
  */
-export async function signTagged(message, secretKey) {
-  return { scheme: SIGNER_SCHEME, sig: await sign(message, secretKey) };
+export async function signTagged(message, secretKey, opts) {
+  const scheme = schemeOf(opts);
+  return { scheme, sig: await sign(message, secretKey, scheme) };
 }
 
 /** The signer seam as a single object. */
