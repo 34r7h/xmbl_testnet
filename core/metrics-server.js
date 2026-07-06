@@ -1,4 +1,5 @@
 import http from 'http';
+import { collectEarnings } from './earnings.js';
 
 /**
  * Health + metrics endpoint for the xmbl-node daemon (A5d).
@@ -52,6 +53,9 @@ export function collectMetrics(core, startTime) {
     // E3 (compute role): cumulative jobs run by the ComputeNode, only
     // constructed when roles.compute is enabled (core/index.js) — 0 otherwise.
     compute_jobs_run: core?.computeNode?.computeJobsRun ?? 0,
+    // E5: node earnings ledger — a derived, non-cashable paper-credit view
+    // over the same E1/E2/E3 counters above (see core/earnings.js).
+    earnings: collectEarnings(core),
   };
 }
 

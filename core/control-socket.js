@@ -1,5 +1,6 @@
 import net from 'net';
 import fs from 'fs';
+import { collectEarnings } from './earnings.js';
 
 /**
  * Local control socket for the xmbl-node daemon — how the handoff coordinator
@@ -18,7 +19,7 @@ import fs from 'fs';
  *   unknown:  { ok: false, error: "unknown op" }
  * Bad JSON on a line is ignored (matches the coordinator).
  *
- * Ops: status, peers, wallet, submit_tx, compute_job, roles. Every op is a single
+ * Ops: status, peers, wallet, submit_tx, compute_job, roles, earnings. Every op is a single
  * request/reply (no waiter-hold pattern). Every handler is wrapped so a throw
  * or rejection becomes a JSON error — the daemon must never crash or hang on a
  * control request.
@@ -63,6 +64,8 @@ export function createControlServer({ core, config, sockPath, statusSnapshot }) 
           : { ok: false, error: 'identity not initialized' };
       case 'roles':
         return { ok: true, roles: config.roles };
+      case 'earnings':
+        return { ok: true, ...collectEarnings(core) };
       case 'submit_tx': {
         if (!req.tx || typeof req.tx !== 'object') {
           return { ok: false, error: 'submit_tx requires a tx object' };
