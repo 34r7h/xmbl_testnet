@@ -257,3 +257,42 @@ describe('Consensus Workflow', () => {
     expect(rawTx.validationTimestamps[0]).toBeLessThanOrEqual(after);
   });
 });
+
+describe('Consensus Workflow — user-as-validator (E1)', () => {
+  let workflow;
+
+  beforeEach(() => {
+    workflow = new ConsensusWorkflow();
+  });
+
+  test('createValidationTasks assigns a task back to the identity that submitted the tx', async () => {
+    const submitterAddress = 'xmbl1submitteraddress';
+    const tx = { to: 'bob', amount: 1.0, from: 'alice', user: 'alice' };
+
+    const rawTxId = await workflow.submitTransaction(submitterAddress, tx);
+    const tasks = workflow.getValidationTasks(rawTxId);
+
+    expect(tasks.some((t) => t.leaderId === submitterAddress)).toBe(true);
+  });
+
+  test('completeValidation finds + completes a submitter-only task not in the fallback leader list', async () => {
+    const submitterAddress = 'xmbl1anothersubmitter';
+    const tx = { to: 'bob', amount: 1.0, from: 'alice', user: 'alice' };
+
+    const rawTxId = await workflow.submitTransaction(submitterAddress, tx);
+    const tasks = workflow.getValidationTasks(rawTxId);
+    const myTask = tasks.find((t) => t.leaderId === submitterAddress);
+    expect(myTask).toBeDefined();
+
+    const result = await workflow.completeValidation(rawTxId, myTask.task, 1000, null, submitterAddress);
+    expect(result).toBe(true);
+
+    const completed = workflow.taskManager.getTask(submitterAddress, myTask.task);
+    expect(completed.complete).toBe(true);
+  });
+
+  test('completeValidation returns false for an unknown taskId', async () => {
+    const result = await workflow.completeValidation('nonexistent-raw-tx', 'nonexistent:task:validate');
+    expect(result).toBe(false);
+  });
+});

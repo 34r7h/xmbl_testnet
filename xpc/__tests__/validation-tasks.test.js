@@ -108,11 +108,20 @@ describe('Validation Task Manager', () => {
     const rawTxId = 'abc123def456';
     const leaderIds = ['leader1', 'leader2', 'leader3'];
     const tasks = manager.createTasks(rawTxId, leaderIds);
-    
+
     tasks.forEach((task, index) => {
       expect(task.task).toBe(`${rawTxId}:${leaderIds[index]}:validate`);
       expect(task.leaderId).toBe(leaderIds[index]);
       expect(task.complete).toBe(false);
     });
+  });
+
+  test('getKnownLeaderIds returns every leaderId ever assigned', () => {
+    expect(manager.getKnownLeaderIds()).toEqual([]);
+
+    const tasks = manager.createTasks('rawTxId', ['leader1', 'submitter-address']);
+    manager.assignTasks('rawTxId', tasks);
+
+    expect(manager.getKnownLeaderIds().sort()).toEqual(['leader1', 'submitter-address'].sort());
   });
 });

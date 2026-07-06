@@ -64,16 +64,20 @@ export class ConsensusWorkflow extends EventEmitter {
   }
 
   async createValidationTasks(rawTxId) {
-    // Get leaders for validation
-    const leaders = this._getValidationLeaders();
+    // Get leaders for validation. user-as-validator (E1): the identity that
+    // submitted this tx (this.rawTxToId) always gets a validation task back
+    // for its own submission, alongside whatever other leaders are available.
+    const submitterId = this.rawTxToId.get(rawTxId);
+    const leaders = this._getValidationLeaders(submitterId);
     const tasks = this.taskManager.createTasks(rawTxId, leaders);
     this.taskManager.assignTasks(rawTxId, tasks);
-    
+
     this.emit('validation_tasks:created', { rawTxId, tasks });
   }
 
   getValidationTasks(rawTxId) {
-    const leaders = this._getValidationLeaders();
+    const submitterId = this.rawTxToId.get(rawTxId);
+    const leaders = this._getValidationLeaders(submitterId);
     const allTasks = [];
     leaders.forEach(leaderId => {
       const tasks = this.taskManager.getTasksForLeader(leaderId);
@@ -90,8 +94,8 @@ export class ConsensusWorkflow extends EventEmitter {
     }
     // Find task leader
     const task = this._findTask(taskId);
-    if (!task) return;
-    
+    if (!task) return false;
+
     // Integration: Verify signature if xid available
     if (this.xid) {
       const rawTx = this._getRawTransaction(rawTxId);
@@ -114,7 +118,7 @@ export class ConsensusWorkflow extends EventEmitter {
             const isValid = await Identity.verifyTransaction(rawTx.txData, publicKey);
             if (!isValid) {
               console.warn('Validation failed: Invalid signature or address mismatch');
-              return;
+              return false;
             }
           } else {
             // If we can't get public key, skip verification (should not happen in production)
@@ -124,7 +128,7 @@ export class ConsensusWorkflow extends EventEmitter {
           // If xid module not available, skip verification
           if (error.code !== 'ERR_MODULE_NOT_FOUND') {
             console.warn('Signature verification error:', error.message);
-            return;
+            return false;
           }
         }
       }
@@ -156,6 +160,7 @@ export class ConsensusWorkflow extends EventEmitter {
       console.log(`Moving transaction ${rawTxId} to processing`);
       await this.moveToProcessing(rawTxId);
     }
+    return true;
   }
 
   async moveToProcessing(rawTxId) {
@@ -331,27 +336,39 @@ export class ConsensusWorkflow extends EventEmitter {
     return txData.from ? (Array.isArray(txData.from) ? txData.from : [txData.from]) : [];
   }
 
-  _getValidationLeaders() {
+  _getValidationLeaders(submitterId = null) {
+    let leaders;
     // Use provided validation leaders (actual identity addresses)
     if (this.validationLeaders && Array.isArray(this.validationLeaders) && this.validationLeaders.length >= 3) {
-      return this.validationLeaders.slice(0, 3);
-    }
-    // Get available leaders from network if xn is available
-    if (this.xn && this.xn.nodes) {
+      leaders = this.validationLeaders.slice(0, 3);
+    } else if (this.xn && this.xn.nodes) {
+      // Get available leaders from network if xn is available
       const nodes = Array.from(this.xn.nodes.values());
       const activeNodes = nodes.filter(n => n && n.active).slice(0, 3);
       if (activeNodes.length >= 3) {
-        return activeNodes.map(n => n.id || n.address);
+        leaders = activeNodes.map(n => n.id || n.address);
       }
     }
-    // Fallback to default leaders (should not happen in production)
-    console.warn('[XPC] Using fallback validation leaders - this should not happen!');
-    return ['leader1', 'leader2', 'leader3'];
+    if (!leaders) {
+      // Fallback to default leaders (should not happen in production)
+      console.warn('[XPC] Using fallback validation leaders - this should not happen!');
+      leaders = ['leader1', 'leader2', 'leader3'];
+    }
+    // user-as-validator (E1): the identity that submitted this tx always gets
+    // a validation task assigned back to itself, even when the rest of the
+    // leader set is the dev/fallback placeholder.
+    if (submitterId && !leaders.includes(submitterId)) {
+      leaders = [submitterId, ...leaders.slice(0, 2)];
+    }
+    return leaders;
   }
 
   _findTask(taskId) {
-    const leaders = this._getValidationLeaders();
-    for (const leaderId of leaders) {
+    // Search every leaderId the task manager actually has tasks under, not
+    // just the current _getValidationLeaders() output — that set can differ
+    // per rawTxId (submitter-specific), so recomputing it here without the
+    // submitterId would fail to find tasks assigned to that submitter.
+    for (const leaderId of this.taskManager.getKnownLeaderIds()) {
       const task = this.taskManager.getTask(leaderId, taskId);
       if (task) return task;
     }

@@ -48,14 +48,14 @@ function runCmd(cmd) {
     execFile(NODE, [DAEMON, cmd, '--config', cfgPath], { env: CHILD_ENV }, (err) => resolve(err ? (err.code ?? 1) : 0));
   });
 }
-function sockCall(op, timeoutMs = 8000) {
+function sockCall(op, args = {}, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
     const sock = net.connect(sockPath);
     let buf = '';
     let done = false;
     const fail = (e) => { if (done) return; done = true; try { sock.destroy(); } catch {} reject(e); };
     const timer = setTimeout(() => fail(new Error(`${op} timeout`)), timeoutMs);
-    sock.on('connect', () => sock.write(JSON.stringify({ op }) + '\n'));
+    sock.on('connect', () => sock.write(JSON.stringify({ op, ...args }) + '\n'));
     sock.on('data', (d) => {
       buf += d;
       const i = buf.indexOf('\n');
@@ -66,6 +66,16 @@ function sockCall(op, timeoutMs = 8000) {
     });
     sock.on('error', (e) => { clearTimeout(timer); fail(e); });
   });
+}
+async function pollUntil(fetchFn, predicate, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let last;
+  while (Date.now() < deadline) {
+    last = await fetchFn();
+    if (predicate(last)) return last;
+    await sleep(200);
+  }
+  return last;
 }
 function httpGetJson(url) {
   return new Promise((resolve, reject) => {
@@ -114,9 +124,26 @@ async function run() {
   for (const stage of ['raw', 'validation_tasks', 'locked_utxo', 'processing', 'tx']) {
     assert(isNum(m.mempool[stage]), `mempool.${stage} is numeric (${m.mempool[stage]})`);
   }
-  // E-role counters are honestly 0 until E1/E2/E3 land (not faked nonzero)
+  // Before any tx: E1 hasn't run yet, E2/E3 never do in this check — honest 0s.
   assert(m.validations_completed === 0 && m.shards_stored === 0 && m.compute_jobs_run === 0,
-    'group-E counters are 0 (unpopulated, not faked)');
+    'group-E counters are 0 before any tx (unpopulated, not faked)');
+
+  // E1 acceptance: submit_tx (roles.validate: true above) must produce a
+  // validation task addressed back to this node's own identity and this
+  // node's ValidationWorker must claim + complete it — validations_completed
+  // rises. shards_stored/compute_jobs_run stay 0 (E2/E3 not implemented yet).
+  const submitResult = await sockCall('submit_tx', { tx: { to: 'bob', amount: 1.23 } }, 8000);
+  assert(submitResult.ok === true, `submit_tx succeeds (${JSON.stringify(submitResult)})`);
+
+  const afterTx = await pollUntil(
+    async () => (await httpGetJson(url)).json,
+    (json) => json.validations_completed > 0,
+    10000,
+  );
+  assert(afterTx.validations_completed > 0,
+    `validations_completed rose after submit_tx (${afterTx.validations_completed})`);
+  assert(afterTx.shards_stored === 0 && afterTx.compute_jobs_run === 0,
+    'E2/E3 counters remain honest 0 (not implemented yet)');
 
   // loopback-only: the endpoint must NOT be reachable on a routable LAN address.
   // (Connecting to 0.0.0.0 is ambiguous/loopback on many OSes, so probe a real
