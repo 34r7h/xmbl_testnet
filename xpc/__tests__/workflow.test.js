@@ -296,3 +296,68 @@ describe('Consensus Workflow — user-as-validator (E1)', () => {
     expect(result).toBe(false);
   });
 });
+
+describe('Consensus Workflow — lead batchSealer hook (E4)', () => {
+  // Drive a tx all the way through submit -> 3 validations -> processing ->
+  // finalize. NOTE: moveToProcessing does NOT auto-finalize — nothing in
+  // ConsensusWorkflow itself calls finalizeTransaction; only an external
+  // caller (in production, the E4 LeadWorker's tx:processing listener; in
+  // tests, here) does. So this helper captures the tx:processing txId and
+  // calls finalizeTransaction explicitly, mirroring what LeadWorker does.
+  async function finalizeOneTx(workflow, overrides = {}) {
+    const tx = { to: 'bob', amount: 1.0, from: 'alice', user: 'alice', ...overrides };
+    const rawTxId = await workflow.submitTransaction('leader1', tx);
+    const tasks = workflow.getValidationTasks(rawTxId);
+
+    const processingTxId = await new Promise((resolve) => {
+      workflow.once('tx:processing', (data) => resolve(data.txId));
+      (async () => {
+        for (const [i, task] of tasks.slice(0, 3).entries()) {
+          await workflow.completeValidation(rawTxId, task.task, 1000 + i, null, `validator${i}`);
+        }
+      })();
+    });
+
+    await workflow.finalizeTransaction(processingTxId);
+    return rawTxId;
+  }
+
+  test('when no batchSealer is configured, finalized txs still go through xclt.addTransaction (legacy path unchanged)', async () => {
+    let addTransactionCalls = 0;
+    const fakeXclt = { addTransaction: async () => { addTransactionCalls += 1; return { blockId: 'b1' }; } };
+    const workflow = new ConsensusWorkflow({ xclt: fakeXclt });
+
+    await finalizeOneTx(workflow);
+    // finalizeTransaction's tx:finalized emit is synchronous-looking but the
+    // listener is async; give its microtask a tick to run.
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(addTransactionCalls).toBe(1);
+  });
+
+  test('when a batchSealer is configured, finalized txs route through it INSTEAD of xclt.addTransaction', async () => {
+    let addTransactionCalls = 0;
+    let batchSealerCalls = 0;
+    const fakeXclt = { addTransaction: async () => { addTransactionCalls += 1; return { blockId: 'b1' }; } };
+    const batchSealer = async (txData) => { batchSealerCalls += 1; expect(txData).toBeDefined(); };
+    const workflow = new ConsensusWorkflow({ xclt: fakeXclt, batchSealer });
+
+    await finalizeOneTx(workflow);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(batchSealerCalls).toBe(1);
+    expect(addTransactionCalls).toBe(0);
+  });
+
+  test('a throwing batchSealer does not crash the workflow or leave it unusable', async () => {
+    const batchSealer = async () => { throw new Error('boom'); };
+    const workflow = new ConsensusWorkflow({ batchSealer });
+
+    await expect(finalizeOneTx(workflow)).resolves.toBeDefined();
+    await new Promise((r) => setTimeout(r, 20));
+
+    // workflow is still usable after the batchSealer threw
+    const rawTxId2 = await workflow.submitTransaction('leader1', { to: 'carol', amount: 2, from: 'dave' });
+    expect(rawTxId2).toBeDefined();
+  });
+});

@@ -52,6 +52,10 @@ export function collectMetrics(core, startTime) {
     // E3 (compute role): cumulative jobs run by the ComputeNode, only
     // constructed when roles.compute is enabled (core/index.js) — 0 otherwise.
     compute_jobs_run: core?.computeNode?.computeJobsRun ?? 0,
+    // E4 (lead role): cumulative faces sealed by the LeadWorker's
+    // addSealedBatch routing, only constructed when roles.lead is enabled
+    // (core/index.js) — 0 otherwise.
+    lead_batches_sealed: core?.leadBatchesSealed ?? 0,
     // E5: node earnings ledger — a derived, non-cashable paper-credit view
     // over the same E1/E2/E3 counters above (see core/earnings.js).
     earnings: collectEarnings(core),

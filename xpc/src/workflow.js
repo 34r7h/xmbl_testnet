@@ -26,10 +26,25 @@ export class ConsensusWorkflow extends EventEmitter {
     
     // Function to lookup public key by address (for signature verification)
     this.getPublicKeyByAddress = options.getPublicKeyByAddress || null;
-    
+
+    // Integration: optional batch-sealing hook (E4 lead role). When provided
+    // (roles.lead, see core/lead-worker.js), finalized transactions route
+    // through it instead of the legacy per-tx xclt.addTransaction call below —
+    // the deterministic addSealedBatch path D3a introduced but left unwired.
+    this.batchSealer = options.batchSealer || null;
+
     // Listen for finalized transactions and add to ledger
     this.on('tx:finalized', async (data) => {
       console.log('[XPC] tx:finalized listener triggered, xclt:', !!this.xclt, 'txData:', !!data.txData);
+      if (this.batchSealer) {
+        try {
+          console.log('[XPC] Routing finalized tx through lead batchSealer:', data.txId || data.txData?.id);
+          await this.batchSealer(data.txData);
+        } catch (error) {
+          console.error('[XPC] batchSealer failed on finalized tx:', error);
+        }
+        return;
+      }
       if (this.xclt) {
         try {
           console.log('[XPC] Adding transaction to ledger:', data.txId || data.txData?.id);

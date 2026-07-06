@@ -21,6 +21,7 @@
     "node:socket-check": "npm -w xid run build:wasm && node scripts/node-socket-check.mjs",
     "node:metrics-check": "npm -w xid run build:wasm && node scripts/node-metrics-check.mjs",
     "node:identity-check": "npm -w xid run build:wasm && node scripts/node-identity-check.mjs",
+    "node:lead-check": "npm -w xid run build:wasm && node scripts/node-lead-check.mjs",
     "node:earnings-check": "npm -w xid run build:wasm && node scripts/node-earnings-check.mjs",
     "swarm": "docker compose -f docker-compose.swarm.yml up --build -d",
     "swarm:down": "docker compose -f docker-compose.swarm.yml down -v",
