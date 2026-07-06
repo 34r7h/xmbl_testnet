@@ -53,8 +53,8 @@ describe('Integration: xpc + xclt (Final Transaction Inclusion)', () => {
       const processingTx = processingTxs[0];
       const txId = Object.keys(workflow.mempool.processingTx)[0];
 
-      // Finalize transaction
-      workflow.finalizeTransaction(txId);
+      // Finalize transaction (async — await so it completes before the ledger add)
+      await workflow.finalizeTransaction(txId);
 
       // Add to ledger
       const result = await ledger.addTransaction(processingTx.txData);
@@ -91,7 +91,7 @@ describe('Integration: xpc + xclt (Final Transaction Inclusion)', () => {
     // Finalize and add to ledger
     const processingTxs = Array.from(workflow.mempool.processingTx.entries());
     for (const [txId, processingTx] of processingTxs) {
-      workflow.finalizeTransaction(txId);
+      await workflow.finalizeTransaction(txId);
       const result = await ledger.addTransaction(processingTx.txData);
       expect(result.blockId).toBeDefined();
     }
@@ -125,7 +125,7 @@ describe('Integration: xpc + xclt (Final Transaction Inclusion)', () => {
     const processingTxs = Array.from(workflow.mempool.processingTx.entries());
     if (processingTxs.length > 0) {
       const [txId] = processingTxs[0];
-      workflow.finalizeTransaction(txId);
+      await workflow.finalizeTransaction(txId);
 
       // Event should be emitted
       await new Promise(resolve => setTimeout(resolve, 50));
@@ -153,8 +153,10 @@ describe('Integration: xpc + xclt (Final Transaction Inclusion)', () => {
     // Try to finalize before validations complete
     const processingTxs = Array.from(workflow.mempool.processingTx.entries());
     if (processingTxs.length === 0) {
-      // Transaction not in processing yet
-      const result = workflow.finalizeTransaction('non-existent');
+      // Transaction not in processing yet. finalizeTransaction is async, so the
+      // result must be awaited — asserting on the un-awaited Promise compares {}
+      // to false and always fails.
+      const result = await workflow.finalizeTransaction('non-existent');
       expect(result).toBe(false);
     }
   });
@@ -182,12 +184,13 @@ describe('Integration: xpc + xclt (Final Transaction Inclusion)', () => {
     if (processingTxs.length > 0) {
       const [txId] = processingTxs[0];
       
-      // Finalize first time
-      const result1 = workflow.finalizeTransaction(txId);
+      // Finalize first time (await — finalizeTransaction is async and returns
+      // true on success, false when the tx is not in the processing mempool).
+      const result1 = await workflow.finalizeTransaction(txId);
       expect(result1).toBe(true);
 
-      // Try to finalize again
-      const result2 = workflow.finalizeTransaction(txId);
+      // Try to finalize again — already removed from processing, so false.
+      const result2 = await workflow.finalizeTransaction(txId);
       expect(result2).toBe(false);
     }
   });
