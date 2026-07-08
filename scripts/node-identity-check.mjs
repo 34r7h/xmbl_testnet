@@ -96,11 +96,12 @@ async function run() {
   const stop2 = await runCmd('stop');
   assert(stop2.code === 0, 'second stop exits 0');
 
-  // OBSERVED, not asserted: the libp2p peer_id is xn's own key and is NOT
-  // persisted by A5e (createLibp2p mints a fresh key each boot). A5e delivers the
-  // stable xmbl ADDRESS — what the acceptance criteria and D3/E1's wallet/
-  // submitting identity require. peer_id persistence is separate xn-layer wiring.
-  console.log(`  note: peer_id boot1=${s1.peer_id} boot2=${s2.peer_id} (address is the A5e-stable identity; peer_id persistence is separate xn work)`);
+  // OBSERVED, not asserted here: A5e delivers the stable xmbl ADDRESS (what the
+  // acceptance criteria and D3/E1's wallet/submitting identity require). The libp2p
+  // peer_id is xn's own key; its persistence is delivered SEPARATELY by A5f — the
+  // node now reloads a persisted libp2p key, so peer_id is ALSO stable across
+  // restarts. That is asserted in scripts/node-peerid-check.mjs.
+  console.log(`  note: peer_id boot1=${s1.peer_id} boot2=${s2.peer_id} (A5e = stable address; A5f = stable peer_id, see node-peerid-check.mjs)`);
 
   // 3. a MISSING identity_path must FAIL start clearly, never silently mint.
   const badCfg = path.join(tmp, 'config.bad.json');

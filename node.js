@@ -28,6 +28,7 @@ import { loadConfig } from './core/node-config.js';
 import { createControlServer } from './core/control-socket.js';
 import { createMetricsServer } from './core/metrics-server.js';
 import { ensureIdentityAtPath, loadIdentityAtPath } from './xid/index.js';
+import { loadOrCreatePeerKey } from './xn/index.js';
 // NOTE: XMBLCore is imported lazily inside `start` only. Importing core/index.js
 // pulls in xvsm/xpc/xsc, which print startup banners at module-load time — that
 // would pollute the machine-readable stdout of `status`/`stop`, which are pure
@@ -109,7 +110,18 @@ async function cmdStart(cfgPath) {
   if (existing) fs.rmSync(pidFile(dataDir), { force: true }); // stale pidfile
 
   const { XMBLCore } = await import('./core/index.js'); // lazy: see top-of-file note
-  const core = new XMBLCore(toCoreConfig(cfg, dataDir));
+  const coreCfg = toCoreConfig(cfg, dataDir);
+
+  // A5f: persist xn's libp2p key next to the C1 keystore (0600) so the node's
+  // peer_id is STABLE across restarts — the libp2p analog of A5e's stable address.
+  // Create-once if absent, load if present, then hand it to XNNode via
+  // config.network BEFORE core.start() constructs libp2p (else it mints a fresh
+  // peer_id each boot). D3/E1 (validation tasks keyed to a stable node) and a
+  // bootstrap seed's published multiaddr (which embeds its peer_id) require this.
+  const peerKeyPath = path.join(path.dirname(cfg.identity_path), 'libp2p-peer.key');
+  const peerKeyInfo = await loadOrCreatePeerKey(peerKeyPath);
+  coreCfg.network.privateKey = peerKeyInfo.privateKey;
+  const core = new XMBLCore(coreCfg);
 
   // A5e: bind a STABLE node identity from the C1 keystore at cfg.identity_path
   // BEFORE start(). loadConfig has already rejected a missing/empty identity_path,

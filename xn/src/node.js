@@ -31,10 +31,10 @@ export class XNNode extends EventEmitter {
   async start() {
     if (this.started) return;
 
-    this.node = await createLibp2p({
+    const libp2pOptions = {
       addresses: {
-        listen: this.options.addresses.length > 0 
-          ? this.options.addresses 
+        listen: this.options.addresses.length > 0
+          ? this.options.addresses
           : [`/ip4/0.0.0.0/tcp/${this.options.port}`]
       },
       transports: [tcp(), webSockets()],
@@ -45,7 +45,12 @@ export class XNNode extends EventEmitter {
         identify: identify(),
         pubsub: floodsub()
       }
-    });
+    };
+    // A5f: use the persisted node key when provided so peer_id is STABLE across
+    // restarts; absent → libp2p mints a fresh key (unchanged default behavior, so
+    // existing XNNode callers that pass no privateKey are unaffected).
+    if (this.options.privateKey) libp2pOptions.privateKey = this.options.privateKey;
+    this.node = await createLibp2p(libp2pOptions);
 
     // Initialize managers
     this.discovery = new PeerDiscovery(this);
