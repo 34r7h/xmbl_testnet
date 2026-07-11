@@ -19,10 +19,11 @@ import { collectEarnings } from './earnings.js';
  *   unknown:  { ok: false, error: "unknown op" }
  * Bad JSON on a line is ignored (matches the coordinator).
  *
- * Ops: status, peers, wallet, submit_tx, compute_job, roles, earnings. Every op is a single
- * request/reply (no waiter-hold pattern). Every handler is wrapped so a throw
- * or rejection becomes a JSON error — the daemon must never crash or hang on a
- * control request.
+ * Ops: status, peers, wallet, submit_tx, compute_job, roles, earnings, publish, subscribe.
+ * Every op EXCEPT `subscribe` is a single request/reply (no waiter-hold pattern). `subscribe`
+ * holds the connection open and STREAMS one JSON line per received pubsub message (the handoff
+ * message-relay transport — see handoff src/xmbl-relay.ts). Every handler is wrapped so a throw
+ * or rejection becomes a JSON error — the daemon must never crash or hang on a control request.
  */
 
 const SUBMIT_TIMEOUT_MS = 5000;
@@ -86,15 +87,43 @@ export function createControlServer({ core, config, sockPath, statusSnapshot }) 
         const result = await withTimeout(core.computeNode.runJob(req.job), SUBMIT_TIMEOUT_MS, 'compute_job');
         return result;
       }
+      case 'publish': {
+        // Broadcast a message onto the libp2p (floodsub) mesh under `topic`. This is the
+        // SEND side of the handoff message-relay transport: a broker publishes each stored
+        // envelope so peer brokers subscribed to the recipient's topic receive it.
+        if (!req.topic || typeof req.topic !== 'string') return { ok: false, error: 'publish requires a topic' };
+        if (!core.xn) return { ok: false, error: 'network layer not initialized' };
+        await withTimeout(core.xn.publish(req.topic, req.data ?? {}), SUBMIT_TIMEOUT_MS, 'publish');
+        return { ok: true, topic: req.topic };
+      }
       default:
         return { ok: false, error: 'unknown op' };
     }
+  }
+
+  // `subscribe` is special: it holds THIS connection open and streams a JSON line per received
+  // pubsub message on `topic` (the RECEIVE side of the handoff relay). The listener is removed and
+  // the topic unsubscribed when the client disconnects, so a dropped relay never leaks handlers.
+  async function handleSubscribe(sock, req) {
+    const reply = (o) => { try { sock.write(JSON.stringify(o) + '\n'); } catch { /* client gone */ } };
+    const topic = req.topic;
+    if (!topic || typeof topic !== 'string') { reply({ ok: false, error: 'subscribe requires a topic' }); return; }
+    if (!core.xn) { reply({ ok: false, error: 'network layer not initialized' }); return; }
+    try { await core.xn.subscribe(topic); } catch (e) { reply({ ok: false, error: String(e?.message || e) }); return; }
+    const listener = (data) => reply({ ok: true, event: 'message', topic, data });
+    core.xn.on(`message:${topic}`, listener);
+    reply({ ok: true, event: 'subscribed', topic });
+    const cleanup = () => { try { core.xn.removeListener(`message:${topic}`, listener); } catch { /* */ } };
+    sock.on('close', cleanup);
+    sock.on('error', cleanup);
   }
 
   function handleLine(sock, line) {
     let req;
     try { req = JSON.parse(line); } catch { return; } // ignore malformed lines
     const reply = (o) => { try { sock.write(JSON.stringify(o) + '\n'); } catch { /* client gone */ } };
+    // `subscribe` holds the socket open and streams — handled separately from the request/reply ops.
+    if (req.op === 'subscribe') { void handleSubscribe(sock, req).catch((e) => reply({ ok: false, error: String(e?.message || e) })); return; }
     // Any throw/rejection in an op becomes a JSON error — never an unhandled crash.
     Promise.resolve()
       .then(() => handleOp(req))
