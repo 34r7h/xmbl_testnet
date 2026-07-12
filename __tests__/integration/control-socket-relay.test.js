@@ -26,6 +26,29 @@ function mockCore() {
   return { xn, config: { roles: {} } };
 }
 
+// A mock core for the `chain` op, mirroring the REAL subsystem APIs the handler reads:
+//   core.xvsm.getStateRoot()   -> hex state root (verkle tree root)
+//   core.xvsm.getStatistics()  -> { totalTransactions, totalDiffs, stateRoot, shards }
+//   core.xpc.getMempoolStats() -> { raw, processing, final, lockedUtxos }
+//   core.xpc.mempool.rawTx     -> Map<leaderId, Map<rawTxId, { txData, txTimestamp }>>  (exact real shape)
+function mockChainCore({ txs = [] } = {}) {
+  const core = mockCore();
+  // rawTx is a Map-of-Maps keyed by leader, exactly like xpc's Mempool.
+  const rawTx = new Map();
+  const leader = new Map();
+  for (const t of txs) leader.set(t.id, { txData: { type: t.type }, txTimestamp: t.timestamp });
+  if (leader.size) rawTx.set('leader-1', leader);
+  core.xvsm = {
+    getStateRoot: () => 'a'.repeat(64),
+    getStatistics: () => ({ totalTransactions: 3, totalDiffs: 2, stateRoot: 'a'.repeat(64), shards: [] }),
+  };
+  core.xpc = {
+    getMempoolStats: () => ({ raw: leader.size, processing: 1, final: 4, lockedUtxos: 0 }),
+    mempool: { rawTx },
+  };
+  return core;
+}
+
 // A tiny newline-delimited-JSON client: connect, send lines, and await the next reply line(s).
 function connectClient(sockPath) {
   const sock = net.connect(sockPath);
@@ -78,6 +101,34 @@ describe('control socket — handoff message-relay transport (publish + streamin
     expect(await client.next()).toEqual({ ok: true, address: '/ip4/127.0.0.1/tcp/4002/p2p/12D3KooWPEER' });
     expect(core.xn.connected).toEqual(['/ip4/127.0.0.1/tcp/4002/p2p/12D3KooWPEER']);
     client.send({ op: 'connect' });   // missing address
+    expect(await client.next()).toMatchObject({ ok: false });
+  });
+
+  it('chain op returns a shaped xmblscan snapshot from the real xvsm/xpc APIs', async () => {
+    const core = mockChainCore({ txs: [
+      { id: 'tx-old', type: 'anchor', timestamp: 1000 },
+      { id: 'tx-new', type: 'transfer', timestamp: 2000 },
+    ] });
+    await boot(core);
+    client.send({ op: 'chain' });
+    const reply = await client.next();
+    expect(reply.ok).toBe(true);
+    expect(reply.state_root).toBe('a'.repeat(64));
+    expect(reply.tx_count).toBe(7);                 // mempool raw(2) + processing(1) + final(4)
+    expect(reply.mempool).toEqual({ raw: 2, processing: 1, final: 4, lockedUtxos: 0 });
+    expect(reply.applied_tx_count).toBe(3);
+    expect(reply.state_diffs).toBe(2);
+    // recent_tx: newest-first, each carrying id + type + timestamp
+    expect(reply.recent_tx).toEqual([
+      { id: 'tx-new', type: 'transfer', timestamp: 2000 },
+      { id: 'tx-old', type: 'anchor', timestamp: 1000 },
+    ]);
+  });
+
+  it('chain op returns {ok:false} when the state machine is not initialized', async () => {
+    const core = mockCore();     // no core.xvsm
+    await boot(core);
+    client.send({ op: 'chain' });
     expect(await client.next()).toMatchObject({ ok: false });
   });
 

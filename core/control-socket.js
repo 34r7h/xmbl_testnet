@@ -19,7 +19,7 @@ import { collectEarnings } from './earnings.js';
  *   unknown:  { ok: false, error: "unknown op" }
  * Bad JSON on a line is ignored (matches the coordinator).
  *
- * Ops: status, peers, wallet, submit_tx, compute_job, roles, earnings, publish, subscribe.
+ * Ops: status, peers, wallet, submit_tx, compute_job, roles, earnings, chain, publish, subscribe.
  * Every op EXCEPT `subscribe` is a single request/reply (no waiter-hold pattern). `subscribe`
  * holds the connection open and STREAMS one JSON line per received pubsub message (the handoff
  * message-relay transport — see handoff src/xmbl-relay.ts). Every handler is wrapped so a throw
@@ -102,6 +102,67 @@ export function createControlServer({ core, config, sockPath, statusSnapshot }) 
         if (!req.address || typeof req.address !== 'string') return { ok: false, error: 'connect requires an address (multiaddr)' };
         await withTimeout(core.xn.connect(req.address), SUBMIT_TIMEOUT_MS, 'connect');
         return { ok: true, address: req.address };
+      }
+      case 'chain': {
+        // Read-only "xmblscan" snapshot of xvsm/consensus state for a client to render:
+        // current state root, a count of transactions this node knows, and the most-recent
+        // raw transactions (id + type + timestamp). Every read below is a REAL API on the
+        // live subsystems (core.xvsm / core.xpc) and is synchronous, so there is nothing to
+        // stream or time-box — anything unavailable becomes null (never fabricated), and any
+        // throw is caught by the outer wrapper (handleLine) → { ok:false } rather than a crash.
+        if (!core.xvsm) return { ok: false, error: 'state machine not initialized' };
+
+        // state_root: verkle state-tree root. After a bare submit_tx this is the empty root
+        // ('0'*64) — the tx sits in the mempool and is only applied to the tree via ledger
+        // block processing (multi-node consensus), so an all-zero root here is genuine, not a bug.
+        let state_root = null;
+        try { state_root = core.xvsm.getStateRoot(); } catch { state_root = null; }
+
+        // xvsm applied-transaction statistics (executed → state-diff'd txs).
+        let stats = null;
+        try { stats = core.xvsm.getStatistics(); } catch { stats = null; }
+
+        // Consensus mempool tiers: { raw, processing, final, lockedUtxos }. `raw` moves the
+        // instant a tx is submitted, so this is the count that actually reflects activity.
+        let mempool = null;
+        try { mempool = core.xpc && typeof core.xpc.getMempoolStats === 'function' ? core.xpc.getMempoolStats() : null; } catch { mempool = null; }
+
+        // recent_tx: the most-recent RAW mempool transactions. rawTx is Map<leaderId,
+        // Map<rawTxId, { txData, txTimestamp, ... }>>; each rawTxId is the same hash submit_tx
+        // returns as tx_id. Raw is the right tier for a testnet scan — txs seldom finalize, and
+        // single-node validation can't advance (needs ≥3 leaders), so submitted txs live here.
+        const recent = [];
+        try {
+          const rawTx = core.xpc && core.xpc.mempool ? core.xpc.mempool.rawTx : null;
+          if (rawTx && typeof rawTx.values === 'function') {
+            for (const leaderMempool of rawTx.values()) {
+              if (!leaderMempool || typeof leaderMempool.entries !== 'function') continue;
+              for (const [rawTxId, entry] of leaderMempool.entries()) {
+                recent.push({
+                  id: rawTxId,
+                  type: entry && entry.txData && entry.txData.type != null ? entry.txData.type : null,
+                  timestamp: entry && entry.txTimestamp != null ? entry.txTimestamp : null,
+                });
+              }
+            }
+          }
+        } catch { /* leave `recent` with whatever it collected */ }
+        recent.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        const recent_tx = recent.slice(0, 20);
+
+        // tx_count: transactions this node currently knows across all mempool tiers — a real
+        // number that increments on submit_tx. Falls back to the raw list length if no mempool.
+        const tx_count = mempool ? (mempool.raw + mempool.processing + mempool.final) : recent_tx.length;
+
+        return {
+          ok: true,
+          state_root,
+          tx_count,
+          mempool,                                             // {raw,processing,final,lockedUtxos} | null
+          applied_tx_count: stats ? stats.totalTransactions : null,  // xvsm-executed tx count
+          state_diffs: stats ? stats.totalDiffs : null,        // xvsm state-diff count
+          recent_tx,                                           // [{ id, type, timestamp }]
+        };
       }
       case 'publish': {
         // Broadcast a message onto the libp2p (floodsub) mesh under `topic`. This is the
