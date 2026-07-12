@@ -17,8 +17,12 @@ function mockCore() {
   const xn = new EventEmitter();
   xn.published = [];
   xn.subscribed = [];
+  xn.connected = [];
   xn.publish = async (topic, data) => { xn.published.push({ topic, data }); };
   xn.subscribe = async (topic) => { xn.subscribed.push(topic); };
+  xn.getAddresses = () => ['/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWMOCK'];
+  xn.getPeerId = () => '12D3KooWMOCK';
+  xn.connect = async (addr) => { xn.connected.push(addr); };
   return { xn, config: { roles: {} } };
 }
 
@@ -59,6 +63,23 @@ describe('control socket — handoff message-relay transport (publish + streamin
     client = connectClient(sockPath);
     await client.ready;
   }
+
+  it('addrs op returns the node peer id + dialable multiaddrs (for peering)', async () => {
+    const core = mockCore();
+    await boot(core);
+    client.send({ op: 'addrs' });
+    expect(await client.next()).toEqual({ ok: true, peer_id: '12D3KooWMOCK', addrs: ['/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWMOCK'] });
+  });
+
+  it('connect op dials a peer multiaddr via core.xn', async () => {
+    const core = mockCore();
+    await boot(core);
+    client.send({ op: 'connect', address: '/ip4/127.0.0.1/tcp/4002/p2p/12D3KooWPEER' });
+    expect(await client.next()).toEqual({ ok: true, address: '/ip4/127.0.0.1/tcp/4002/p2p/12D3KooWPEER' });
+    expect(core.xn.connected).toEqual(['/ip4/127.0.0.1/tcp/4002/p2p/12D3KooWPEER']);
+    client.send({ op: 'connect' });   // missing address
+    expect(await client.next()).toMatchObject({ ok: false });
+  });
 
   it('publish op broadcasts onto core.xn and acks {ok,topic}', async () => {
     const core = mockCore();

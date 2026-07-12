@@ -87,6 +87,22 @@ export function createControlServer({ core, config, sockPath, statusSnapshot }) 
         const result = await withTimeout(core.computeNode.runJob(req.job), SUBMIT_TIMEOUT_MS, 'compute_job');
         return result;
       }
+      case 'addrs': {
+        // This node's own peer id + dialable listen multiaddrs (each embeds the peer id). A peer
+        // broker/coordinator needs these to add this node to its bootstrap_peers or `connect` to it.
+        if (!core.xn) return { ok: false, error: 'network layer not initialized' };
+        const addrs = (core.xn.getAddresses() || []).map((a) => a.toString());
+        const peer_id = core.xn.getPeerId ? String(core.xn.getPeerId() || '') : '';
+        return { ok: true, peer_id, addrs };
+      }
+      case 'connect': {
+        // Dial another node by multiaddr (must include /p2p/<peerId>). Lets a coordinator peer two
+        // nodes at runtime without a restart/bootstrap-config change — the mesh the relay rides on.
+        if (!core.xn) return { ok: false, error: 'network layer not initialized' };
+        if (!req.address || typeof req.address !== 'string') return { ok: false, error: 'connect requires an address (multiaddr)' };
+        await withTimeout(core.xn.connect(req.address), SUBMIT_TIMEOUT_MS, 'connect');
+        return { ok: true, address: req.address };
+      }
       case 'publish': {
         // Broadcast a message onto the libp2p (floodsub) mesh under `topic`. This is the
         // SEND side of the handoff message-relay transport: a broker publishes each stored
