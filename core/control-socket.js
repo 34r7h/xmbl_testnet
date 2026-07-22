@@ -19,7 +19,7 @@ import { collectEarnings } from './earnings.js';
  *   unknown:  { ok: false, error: "unknown op" }
  * Bad JSON on a line is ignored (matches the coordinator).
  *
- * Ops: status, peers, wallet, submit_tx, compute_job, roles, earnings. Every op is a single
+ * Ops: status, peers, wallet, submit_tx, compute_job, roles, earnings, validations. Every op is a single
  * request/reply (no waiter-hold pattern). Every handler is wrapped so a throw
  * or rejection becomes a JSON error — the daemon must never crash or hang on a
  * control request.
@@ -66,6 +66,11 @@ export function createControlServer({ core, config, sockPath, statusSnapshot }) 
         return { ok: true, roles: config.roles };
       case 'earnings':
         return { ok: true, ...collectEarnings(core) };
+      case 'validations':
+        // E1c follow-up: per-tx validation EVENTS (who validated which tx, when) — distinct from the
+        // validationsCompleted counter. Bounded ring (core/index.js), newest-first for a viz to render
+        // directly. Empty array (not an error) when roles.validate is off or nothing has validated yet.
+        return { ok: true, validations: (core.recentValidations || []).slice().reverse() };
       case 'submit_tx': {
         if (!req.tx || typeof req.tx !== 'object') {
           return { ok: false, error: 'submit_tx requires a tx object' };

@@ -68,6 +68,10 @@ export class XMBLCore {
     // validation actually completes — see metrics-server.js's collectMetrics.
     this.validationsCompleted = 0;
     this.validationWorker = null;
+    // Per-tx validation EVENTS (distinct from the validationsCompleted counter above): a bounded ring of
+    // the most recent genuine passes, so a viz can show WHICH tx this node just validated, not just a
+    // rising number. Never grows unbounded — oldest entries drop as new ones arrive.
+    this.recentValidations = [];
     // E3 (compute role): constructed after xn.start() too, for the same
     // reason — its xn-topic subscription only takes effect if xn.started is
     // already true. Opt-in via roles.compute (see start()).
@@ -117,10 +121,15 @@ export class XMBLCore {
     // own validation tasks (user-as-validator). Needs this.xid.address, so it
     // starts after identity is resolved above.
     if (this.config.roles?.validate) {
+      const RECENT_VALIDATIONS_MAX = 50;
       this.validationWorker = new ValidationWorker({
         workflow: this.xpc,
         identityAddress: this.xid.address,
-        onValidationCompleted: () => { this.validationsCompleted += 1; },
+        onValidationCompleted: ({ rawTxId, taskId } = {}) => {
+          this.validationsCompleted += 1;
+          this.recentValidations.push({ tx_id: rawTxId, task_id: taskId, validator: this.xid.address, ts: Date.now() });
+          if (this.recentValidations.length > RECENT_VALIDATIONS_MAX) this.recentValidations.shift();
+        },
       });
       this.validationWorker.start();
     }
