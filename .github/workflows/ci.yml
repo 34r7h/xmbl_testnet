@@ -25,6 +25,16 @@ jobs:
     
     - name: Install dependencies
       run: npm ci
+
+    # xid's build:wasm (Docker: Dockerfile.swarm pins emscripten/emsdk:3.1.51 for the
+    # same build) needs `emcc` on PATH -- without it, `npm run test:integration` fails
+    # at exit 127 (`emcc: command not found`) BEFORE any test runs, so nothing on this
+    # repo has actually been CI-gated. Same version pin as the Docker build for a
+    # consistent build environment.
+    - name: Setup Emscripten
+      uses: mymindstorm/setup-emsdk@v14
+      with:
+        version: 3.1.51
     
     - name: Run linter
       run: npm run lint || true
