@@ -138,6 +138,25 @@ describe('ValidationWorker (E1)', () => {
     expect(count).toBe(1);
   });
 
+  test('E1c: onValidationCompleted also reports count/required (the "N/3" progress label)', async () => {
+    let payload = null;
+    worker = new ValidationWorker({
+      workflow,
+      identityAddress: MY_ADDRESS,
+      onValidationCompleted: (p) => { payload = p; },
+    });
+    worker.start();
+    const reportedP = waitForEvent(worker, 'validation:reported');
+
+    const tx = { to: 'bob', amount: 1.0, from: 'alice', user: 'alice' };
+    await workflow.submitTransaction(MY_ADDRESS, tx);
+    await reportedP;
+
+    expect(payload).not.toBeNull();
+    expect(payload.count).toBe(1);
+    expect(payload.required).toBe(workflow.requiredValidations);
+  });
+
   test('stop() detaches the listener so no further tasks are claimed', async () => {
     let count = 0;
     worker = new ValidationWorker({

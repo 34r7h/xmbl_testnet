@@ -420,13 +420,18 @@ export class ConsensusWorkflow extends EventEmitter {
   _getValidationCount(rawTxId) {
     const leaderId = this.rawTxToId.get(rawTxId);
     if (!leaderId) return 0;
-    
+
     const leaderMempool = this.mempool.rawTx.get(leaderId);
     if (!leaderMempool) return 0;
-    
+
     const rawTx = leaderMempool.get(rawTxId);
     return rawTx ? rawTx.validationTimestamps.length : 0;
   }
+
+  // Public wrapper for callers outside this module (e.g. ValidationWorker, reporting an "N/3" progress
+  // label for a tx it just validated) — same value completeValidation already logs internally, exposed
+  // without reaching into the underscore-prefixed internal.
+  getValidationCount(rawTxId) { return this._getValidationCount(rawTxId); }
 
   _getRawTransaction(rawTxId) {
     const leaderId = this.rawTxToId.get(rawTxId);

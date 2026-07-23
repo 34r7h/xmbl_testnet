@@ -64,9 +64,11 @@ export class ValidationWorker extends EventEmitter {
       return;
     }
 
-    // E1c: count validations in node metrics — only on a genuine pass.
+    // E1c: count validations in node metrics — only on a genuine pass. `count` is the "N/3" progress
+    // label (same value completeValidation already logs internally) for consumers surfacing per-tx events.
     if (typeof this.onValidationCompleted === 'function') {
-      this.onValidationCompleted({ rawTxId, taskId: task.task });
+      const count = typeof this.workflow.getValidationCount === 'function' ? this.workflow.getValidationCount(rawTxId) : undefined;
+      this.onValidationCompleted({ rawTxId, taskId: task.task, count, required: this.workflow.requiredValidations });
     }
     this.emit('validation:reported', { rawTxId, taskId: task.task, leaderId: this.identityAddress });
   }

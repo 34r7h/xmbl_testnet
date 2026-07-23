@@ -125,9 +125,15 @@ export class XMBLCore {
       this.validationWorker = new ValidationWorker({
         workflow: this.xpc,
         identityAddress: this.xid.address,
-        onValidationCompleted: ({ rawTxId, taskId } = {}) => {
+        onValidationCompleted: ({ rawTxId, taskId, count, required } = {}) => {
           this.validationsCompleted += 1;
-          this.recentValidations.push({ tx_id: rawTxId, task_id: taskId, validator: this.xid.address, ts: Date.now() });
+          // `count`/`required` give consumers (e.g. the activity timeline) an "N/3" progress label — omitted
+          // entirely rather than a fabricated 0 when the workflow couldn't report a count for some reason.
+          this.recentValidations.push({
+            tx_id: rawTxId, task_id: taskId, validator: this.xid.address, ts: Date.now(),
+            ...(typeof count === 'number' ? { count } : {}),
+            ...(typeof required === 'number' ? { required } : {}),
+          });
           if (this.recentValidations.length > RECENT_VALIDATIONS_MAX) this.recentValidations.shift();
         },
       });
