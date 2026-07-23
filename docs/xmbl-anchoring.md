@@ -128,7 +128,9 @@ verification lands** (i.e. after the mutation, using the resulting
   "request_id": "<JobTask.request_id>",
   "status": "<'verified' | 'rejected'>",
   "verified_by": "<JobTask.verified_by>",
-  "updated_at": "<JobTask.updated_at>"
+  "updated_at": "<JobTask.updated_at>",
+  "payout_conditions": "<JobTask.payout_conditions, omit if the task set none>",
+  "conditions_eval": "<JobTask.conditions_eval, omit if the task set none>"
 }
 ```
 
@@ -140,6 +142,15 @@ Only the final two possible `status` values reachable via this event
 - `timestamp` = `JobTask.updated_at` (the value it holds at the moment
   `status` flips to `verified`/`rejected` — read it in the same
   transaction/mutation that performs the status change, not a later read).
+- `payout_conditions`/`conditions_eval` (task 7eb29d0a, the "judgment
+  receipt"): `payout_conditions` is the task's locked, finite registry of
+  named checks (`src/conditions.ts`); `conditions_eval` is the audit trail
+  of their pass/fail results. Anchoring both — not just a wire-tx decoration
+  — commits the judgment itself into the hash, so a third party can
+  recompute this record and see WHAT was checked (and, since the registry
+  is finite/known, what was not) without trusting the broker's database.
+  Both are absent on a task with no payout conditions, so that task's
+  anchor hash is unaffected.
 
 ## Event 3 — `settlement.executed`
 
@@ -162,7 +173,9 @@ auto-settle path inside `verifyTask`), both producing a `PaymentReceipt`
   "asset": "<PaymentReceipt.asset>",
   "network": "<PaymentReceipt.network>",
   "tx": "<PaymentReceipt.tx, omit if absent — free/zero-amount settlements have no on-chain tx of their own>",
-  "created_at": "<PaymentReceipt.created_at>"
+  "created_at": "<PaymentReceipt.created_at>",
+  "payout_conditions": "<the settled task's payout_conditions, omit if none>",
+  "conditions_eval": "<the settled task's conditions_eval, omit if none>"
 }
 ```
 
@@ -176,6 +189,31 @@ receipts are not anchored (nothing to attest to on-chain).
 
 - `agent_xmbl_address` = the XMBL address of `payTo` (the paid agent).
 - `timestamp` = `PaymentReceipt.created_at`.
+- `payout_conditions`/`conditions_eval` (task 7eb29d0a, the "judgment
+  receipt" — same fields as `task.verified` above, added to the settlement
+  event too since this is literally "the settlement receipt" the finding
+  named): the settled task's locked condition registry + eval audit trail,
+  resolved by parsing `task_id` out of `resource` the same way this event
+  already does. `xclt/src/anchoring-normalizer.js` is deliberately I/O-free
+  (no store access), so its `canonicalRecordForSettlementExecuted` can only
+  include these if the caller has already merged them onto the
+  receipt-shaped object before calling — it does not perform the task
+  lookup itself, unlike handoff's own `src/xvsm-anchor.ts` settlementRecord,
+  which does the lookup inline (it has direct store access).
+
+**Known pre-existing gap, found while adding the fields above (task
+7eb29d0a), not fixed by it:** handoff's actual
+`src/xvsm-anchor.ts::settlementRecord` does not produce the field set
+documented above — it anchors `resource` (the raw string) instead of a
+parsed `task_id`, has no `pay_to`/`tx` fields, and labels
+`PaymentReceipt.created_at` as `settled_at`. So today, unlike
+`task.created`/`task.verified` (which do match this doc and
+`anchoring-normalizer.js` field-for-field), `settlement.executed`'s anchor
+hash cannot be cross-repo-verified against this spec or against
+`xclt/src/anchoring-normalizer.js` — only against handoff's own
+implementation, in isolation. Reconciling the two is a separate, larger
+change (it touches whichever side has to change its anchored field names)
+and is out of scope here.
 
 ## Event 4 — `artifact.uploaded`
 

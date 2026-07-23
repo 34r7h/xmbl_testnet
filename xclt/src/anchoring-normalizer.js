@@ -100,6 +100,13 @@ export function canonicalRecordForTaskVerified(task) {
     status: task.status,
     verified_by: task.verified_by,
     updated_at: task.updated_at,
+    // judgment receipt (handoff task 7eb29d0a): the locked payout-condition registry (src/conditions.ts) + its
+    // eval results, so a third party can recompute this hash and see WHAT was checked (and, since the registry
+    // is finite/known, what wasn't) without trusting the broker. Kept in lockstep with handoff's own
+    // src/xvsm-anchor.ts taskVerifiedRecord and scripts/xmbl-anchor-verify.mjs — undefined on a task with no
+    // payout conditions, so omitUndefined drops it and the hash is byte-identical to before for those tasks.
+    payout_conditions: task.payout_conditions,
+    conditions_eval: task.conditions_eval,
   });
 }
 
@@ -125,6 +132,12 @@ export function canonicalRecordForSettlementExecuted(receipt) {
     network: receipt.network,
     tx: receipt.tx,
     created_at: receipt.created_at,
+    // judgment receipt (handoff task 7eb29d0a) — this module is I/O-free (see file header), so it can only
+    // read these off `receipt` if the caller already merged the settled task's payout_conditions/conditions_eval
+    // onto the receipt-shaped object, the same way every other field here is a plain read off `receipt` and not
+    // a lookup this module performs itself. Undefined/absent is the safe default (omitUndefined drops it).
+    payout_conditions: receipt.payout_conditions,
+    conditions_eval: receipt.conditions_eval,
   });
 }
 

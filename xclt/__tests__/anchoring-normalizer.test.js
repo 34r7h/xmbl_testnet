@@ -126,6 +126,40 @@ describe('canonicalRecordForTaskVerified', () => {
     expect(() => canonicalRecordForTaskVerified({ ...verifiedTask, status: 'pending_verification' })).toThrow();
     expect(() => canonicalRecordForTaskVerified({ ...verifiedTask, status: 'todo' })).toThrow();
   });
+
+  // judgment receipt (handoff task 7eb29d0a): payout_conditions (the locked, finite check registry) +
+  // conditions_eval (its pass/fail audit trail) commit into the anchored record, not just decorate the wire tx.
+  test('includes payout_conditions/conditions_eval when the task has them', () => {
+    const withConditions = {
+      ...verifiedTask,
+      payout_conditions: [{ fn: 'result_min_length', args: { min: 20 } }],
+      conditions_eval: [{ fn: 'result_min_length', pass: true, detail: 'result length 42 >= 20', at: '2026-07-05T00:59:00.000Z' }],
+    };
+    expect(canonicalRecordForTaskVerified(withConditions)).toEqual({
+      event: 'task.verified',
+      task_id: 'task-1',
+      request_id: 'req-1',
+      status: 'verified',
+      verified_by: 'carol',
+      updated_at: '2026-07-05T01:00:00.000Z',
+      payout_conditions: [{ fn: 'result_min_length', args: { min: 20 } }],
+      conditions_eval: [{ fn: 'result_min_length', pass: true, detail: 'result length 42 >= 20', at: '2026-07-05T00:59:00.000Z' }],
+    });
+  });
+
+  test('omits payout_conditions/conditions_eval (does not null them) for a task with no payout conditions', () => {
+    const rec = canonicalRecordForTaskVerified(verifiedTask);
+    expect(Object.keys(rec)).not.toContain('payout_conditions');
+    expect(Object.keys(rec)).not.toContain('conditions_eval');
+  });
+
+  test('a task.verified anchor hash changes when conditions_eval differs — the judgment is hash-committed, not decorative', () => {
+    const passed = { ...verifiedTask, payout_conditions: [{ fn: 'http_ok', args: { url: 'https://x' } }], conditions_eval: [{ fn: 'http_ok', pass: true, at: 't' }] };
+    const failed = { ...passed, conditions_eval: [{ fn: 'http_ok', pass: false, at: 't' }] };
+    const hashPassed = sha256Hex(jcsCanonicalize(canonicalRecordForTaskVerified(passed)));
+    const hashFailed = sha256Hex(jcsCanonicalize(canonicalRecordForTaskVerified(failed)));
+    expect(hashPassed).not.toBe(hashFailed);
+  });
 });
 
 describe('canonicalRecordForSettlementExecuted', () => {
@@ -164,6 +198,26 @@ describe('canonicalRecordForSettlementExecuted', () => {
 
   test('throws for a non-settled receipt', () => {
     expect(() => canonicalRecordForSettlementExecuted({ ...receipt, status: 'failed' })).toThrow();
+  });
+
+  // judgment receipt (handoff task 7eb29d0a): this module is I/O-free (see file header) so it only reads
+  // payout_conditions/conditions_eval if the caller already merged them onto the receipt-shaped object —
+  // it does not (cannot) look the task up itself.
+  test('includes payout_conditions/conditions_eval when the caller has merged them onto the receipt', () => {
+    const withConditions = {
+      ...receipt,
+      payout_conditions: [{ fn: 'prod_serves', args: { url: 'https://x', contains: 'ok' } }],
+      conditions_eval: [{ fn: 'prod_serves', pass: true, detail: 'GET https://x → 200, contains "ok": true', at: '2026-07-05T02:00:00.000Z' }],
+    };
+    const rec = canonicalRecordForSettlementExecuted(withConditions);
+    expect(rec.payout_conditions).toEqual([{ fn: 'prod_serves', args: { url: 'https://x', contains: 'ok' } }]);
+    expect(rec.conditions_eval).toEqual([{ fn: 'prod_serves', pass: true, detail: 'GET https://x → 200, contains "ok": true', at: '2026-07-05T02:00:00.000Z' }]);
+  });
+
+  test('omits payout_conditions/conditions_eval when absent from the receipt (unchanged from before this field existed)', () => {
+    const rec = canonicalRecordForSettlementExecuted(receipt);
+    expect(Object.keys(rec)).not.toContain('payout_conditions');
+    expect(Object.keys(rec)).not.toContain('conditions_eval');
   });
 });
 
