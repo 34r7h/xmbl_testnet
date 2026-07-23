@@ -12,7 +12,11 @@ jobs:
     
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        # libp2p integration tests need CustomEvent (Node global since v19) AND
+        # Promise.withResolvers (since v21.7/22) simultaneously — 18.x/20.x can't run
+        # this code at all (verified: exit via ReferenceError / TypeError before any
+        # assertion runs). 22.x matches prod (v22.21.1); 24.x is forward coverage.
+        node-version: [22.x, 24.x]
     
     steps:
     - uses: actions/checkout@v4
