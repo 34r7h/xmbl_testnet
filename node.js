@@ -176,6 +176,10 @@ async function cmdStart(cfgPath) {
       listen_addrs: cfg.listen_addrs,
       metrics_url: metricsUrl,
       started_at: status.started_at,
+      // Rides the ALREADY-POLLED status op (broker calls nodeStatus() on every /xmbl/status; no new
+      // round-trip, not gated behind the slower `chain` O(blocks) scan) — same in-memory ring the
+      // dedicated `validations` op also serves, just cheaply duplicated onto the hot path too.
+      validations: (core.recentValidations || []).slice().reverse(),
     }),
   });
   console.log(
