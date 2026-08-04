@@ -2,6 +2,9 @@
   "name": "xbe",
   "version": "0.1.0",
   "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
   "description": "XMBL Browser Extension",
   "scripts": {
     "build": "webpack",

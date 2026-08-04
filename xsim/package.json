@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "type": "module",
   "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
   "description": "XMBL Simulator",
   "dependencies": {
     "@faker-js/faker": "^8.4.1",

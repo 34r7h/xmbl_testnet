@@ -2,6 +2,9 @@
   "name": "xda",
   "version": "0.1.0",
   "main": "main/main.js",
+  "exports": {
+    ".": "./index.js"
+  },
   "description": "XMBL Desktop Application",
   "scripts": {
     "dev": "vite",
